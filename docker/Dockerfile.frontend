@@ -1,0 +1,61 @@
+# 哪吒家庭 - 前端 Dockerfile
+# 多阶段构建：开发环境 + 生产环境
+
+# ====== 开发环境 ======
+FROM node:20-alpine as development
+
+# 设置工作目录
+WORKDIR /app
+
+# 安装 pnpm（可选，使用 npm 也可以）
+RUN npm install -g pnpm
+
+# 复制 package.json 和 package-lock.json
+COPY package*.json ./
+
+# 安装依赖
+RUN npm install
+
+# 暴露端口
+EXPOSE 3000
+
+# 开发环境默认命令（热重载）
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3000"]
+
+# ====== 构建阶段 ======
+FROM node:20-alpine as builder
+
+WORKDIR /app
+
+# 复制依赖文件
+COPY package*.json ./
+RUN npm ci
+
+# 复制源代码
+COPY . .
+
+# 构建生产版本
+RUN npm run build
+
+# ====== 生产环境 ======
+FROM nginx:1.25-alpine as production
+
+# 复制自定义 nginx 配置（前端构建上下文内自带，完整主配置）
+COPY nginx.conf /etc/nginx/nginx.conf
+
+# 从构建阶段复制静态文件
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# 创建非 root 用户（可选，nginx 默认已有）
+RUN chown -R nginx:nginx /usr/share/nginx/html && \
+    chmod -R 755 /usr/share/nginx/html
+
+# 暴露端口
+EXPOSE 80
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD wget --quiet --tries=1 --spider http://localhost/ || exit 1
+
+# 启动 nginx
+CMD ["nginx", "-g", "daemon off;"]

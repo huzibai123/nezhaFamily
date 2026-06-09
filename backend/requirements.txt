@@ -1,0 +1,36 @@
+# Web 框架
+fastapi==0.110.0
+uvicorn[standard]==0.27.1
+
+# 数据库
+sqlalchemy[asyncio]==2.0.25
+asyncpg==0.29.0
+alembic==1.13.1
+psycopg2-binary==2.9.9  # Alembic 同步迁移需要（env.py 把 asyncpg URL 转同步）
+
+# 数据验证
+pydantic==2.6.1
+pydantic-settings==2.1.0
+
+# 认证与安全
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt<4.2.0  # 4.2+ 与 passlib 不兼容
+python-multipart==0.0.9
+email-validator==2.3.0  # pydantic EmailStr 需要
+
+# 任务队列
+celery==5.3.6
+redis==5.0.1
+
+# 工具库
+python-dotenv==1.0.1
+aiofiles==23.2.1
+pillow==10.4.0
+
+# 开发工具
+pytest==7.4.4  # pytest-asyncio 0.23.4 要求 pytest<8
+pytest-asyncio==0.23.4
+httpx==0.26.0
+black==24.1.1
+ruff==0.2.1

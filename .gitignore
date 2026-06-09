@@ -37,11 +37,20 @@ venv.bak/
 *.swo
 *~
 .DS_Store
+.playwright-mcp/
 
-# Environment variables
+# Environment variables and local secrets
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+!**/.env.example
+*.pem
+*.key
+secrets/
+vps*.md
+*配置信息*.md
+deploy.local*.md
+ops.local*.md
 
 # Database
 *.db
@@ -53,6 +62,7 @@ venv.bak/
 # Media files (uploaded by users)
 backend/uploads/
 backend/media/
+backend/backups/
 
 # Frontend
 frontend/node_modules/
@@ -68,6 +78,10 @@ frontend/.output/
 htmlcov/
 .pytest_cache/
 .tox/
+test_login.py
+
+# Local visual review artifacts
+nezha-*.png
 
 # Alembic
 alembic/versions/*.pyc

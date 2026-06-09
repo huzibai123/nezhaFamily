@@ -1,0 +1,51 @@
+# Git and local metadata
+.git
+.gitignore
+.dockerignore
+.DS_Store
+
+# Environment and local secrets
+.env
+.env.*
+*.pem
+*.key
+secrets/
+vps*.md
+*配置信息*.md
+
+# Python caches and virtual environments
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+ENV/
+
+# Runtime data
+backups/
+media/
+uploads/
+logs/
+*.log
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Node artifacts accidentally placed in context
+node_modules/
+npm-debug.log*
+
+# Local databases and temp files
+*.db
+*.sqlite
+*.sqlite3
+tmp/
+temp/
+*.tmp

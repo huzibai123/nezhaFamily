@@ -1,0 +1,20 @@
+{
+  "name": "nezha-family",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Nezha Family monorepo helpers",
+  "scripts": {
+    "dev": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "preview": "npm --prefix frontend run preview",
+    "install:frontend": "npm --prefix frontend install",
+    "ci:frontend": "npm --prefix frontend ci"
+  },
+  "keywords": [
+    "vue",
+    "vite",
+    "fastapi",
+    "docker"
+  ],
+  "license": "MIT"
+}

@@ -1,0 +1,26 @@
+[tool.pytest.ini_options]
+# 设置 asyncio 模式为 auto，自动处理 async 测试
+asyncio_mode = "auto"
+
+# 测试文件和目录匹配模式
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+
+# 测试输出格式
+addopts = """
+    -v
+    --strict-markers
+    --tb=short
+    --disable-warnings
+"""
+
+# 标记定义（可选，用于分类测试）
+markers = [
+    "slow: 标记慢速测试（如需要真实数据库的集成测试）",
+    "unit: 标记单元测试（不需要数据库）",
+    "integration: 标记集成测试（需要数据库/Redis）",
+]
+
+# 测试路径
+testpaths = ["tests"]

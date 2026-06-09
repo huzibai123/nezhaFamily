@@ -1,0 +1,188 @@
+# 哪吒家庭 - 生产环境 Docker Compose 配置
+# 用途：VPS/NAS 生产部署
+# 启动：docker-compose -f docker-compose.prod.yml up -d
+# 停止：docker-compose -f docker-compose.prod.yml down
+
+services:
+    # PostgreSQL 数据库
+    postgres:
+        image: postgres:16-alpine
+        container_name: nezha-postgres
+        environment:
+            POSTGRES_DB: ${POSTGRES_DB:-nezha_family}
+            POSTGRES_USER: ${POSTGRES_USER:-nezha_user}
+            POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在.env文件中设置POSTGRES_PASSWORD}
+            POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+        volumes:
+            - postgres_data:/var/lib/postgresql/data
+        networks:
+            - nezha-network
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nezha_user} -d ${POSTGRES_DB:-nezha_family}"]
+            interval: 30s
+            timeout: 10s
+            retries: 5
+        restart: always
+        # 生产环境不暴露端口到宿主机
+        expose:
+            - "5432"
+
+    # Redis 缓存和任务队列
+    redis:
+        image: redis:7-alpine
+        container_name: nezha-redis
+        command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:?请在.env文件中设置REDIS_PASSWORD}
+        volumes:
+            - redis_data:/data
+        networks:
+            - nezha-network
+        healthcheck:
+            test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+            interval: 30s
+            timeout: 5s
+            retries: 5
+        restart: always
+        expose:
+            - "6379"
+
+    # FastAPI 后端服务
+    backend:
+        build:
+            context: ./backend
+            dockerfile: ../docker/Dockerfile.backend
+            target: production
+        container_name: nezha-backend
+        environment:
+            # 数据库配置
+            DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-nezha_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-nezha_family}
+            # Redis 配置
+            REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+            # JWT 配置
+            SECRET_KEY: ${SECRET_KEY:?请在.env文件中设置SECRET_KEY}
+            ALGORITHM: HS256
+            ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-10080}
+            # 应用配置
+            DEBUG: "false"
+            ENVIRONMENT: production
+            ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?请在.env文件中设置ALLOWED_ORIGINS}
+            # 文件存储配置
+            MEDIA_ROOT: /app/media
+            MAX_UPLOAD_SIZE: ${MAX_UPLOAD_SIZE:-104857600}
+            # Celery 配置
+            CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
+            CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/2
+        volumes:
+            - media_files:/app/media
+            - backup_files:/app/backups
+            - ./logs/backend:/app/logs
+        networks:
+            - nezha-network
+        depends_on:
+            postgres:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+        healthcheck:
+            test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+            interval: 60s
+            timeout: 10s
+            retries: 3
+            start_period: 60s
+        restart: always
+        expose:
+            - "8000"
+        # 生产环境使用 gunicorn + uvicorn worker
+        command: sh -c "alembic upgrade head && gunicorn app.main:app --workers 4 --worker-class uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --timeout 120 --keep-alive 5"
+
+    # Celery Worker (异步任务处理)
+    celery-worker:
+        build:
+            context: ./backend
+            dockerfile: ../docker/Dockerfile.backend
+            target: production
+        container_name: nezha-celery-worker
+        environment:
+            DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-nezha_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-nezha_family}
+            REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+            CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
+            CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/2
+            MEDIA_ROOT: /app/media
+            ENVIRONMENT: production
+        volumes:
+            - media_files:/app/media
+            - ./logs/celery:/app/logs
+        networks:
+            - nezha-network
+        depends_on:
+            postgres:
+                condition: service_healthy
+            redis:
+                condition: service_healthy
+        restart: always
+        # 生产环境使用更多并发
+        command: celery -A app.tasks.celery_app worker --loglevel=warning --concurrency=4 --max-tasks-per-child=1000
+
+    # Vue 3 前端静态文件服务
+    frontend:
+        build:
+            context: ./frontend
+            dockerfile: ../docker/Dockerfile.frontend
+            target: production
+        container_name: nezha-frontend
+        networks:
+            - nezha-network
+        restart: always
+        expose:
+            - "80"
+
+    # Caddy 反向代理 (自动 HTTPS)
+    caddy:
+        image: caddy:2.7-alpine
+        container_name: nezha-caddy
+        ports:
+            - "80:80"
+            - "443:443"
+            - "443:443/udp"  # HTTP/3 支持
+        environment:
+            DOMAIN: ${DOMAIN:?请在.env文件中设置DOMAIN}
+            EMAIL: ${ADMIN_EMAIL:?请在.env文件中设置ADMIN_EMAIL}
+        volumes:
+            - ./docker/Caddyfile:/etc/caddy/Caddyfile:ro
+            - caddy_data:/data
+            - caddy_config:/config
+        networks:
+            - nezha-network
+        depends_on:
+            - backend
+            - frontend
+        restart: always
+
+# 数据卷定义
+volumes:
+    postgres_data:
+        driver: local
+    redis_data:
+        driver: local
+    media_files:
+        driver: local
+        # 可选：映射到宿主机路径便于备份
+        # driver_opts:
+        #   type: none
+        #   o: bind
+        #   device: /path/to/host/media
+    backup_files:
+        driver: local
+        # 可选：映射到宿主机路径便于长期保留备份
+        # driver_opts:
+        #   type: none
+        #   o: bind
+        #   device: /path/to/host/backups
+    caddy_data:
+        driver: local
+    caddy_config:
+        driver: local
+
+# 网络定义
+networks:
+    nezha-network:
+        driver: bridge

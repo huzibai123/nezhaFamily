@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Test Page</title>
+</head>
+<body>
+    <h1>测试页面</h1>
+    <p>如果你能看到这个，说明服务器正常</p>
+    <script>
+        console.log('Test page loaded');
+        fetch('/src/main.ts')
+            .then(res => res.text())
+            .then(text => console.log('main.ts loaded:', text.substring(0, 100)));
+    </script>
+</body>
+</html>
