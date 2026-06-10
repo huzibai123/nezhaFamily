@@ -45,6 +45,16 @@ from app.schemas.notification import (
     NotificationListResponse,
     NotificationResponse,
 )
+from app.schemas.ai import (
+    AIAlbumSuggestionResponse,
+    AIAlbumSuggestionReview,
+    AIProviderResponse,
+    AIPersonaResponse,
+    AIStatusResponse,
+    AIJobResponse,
+    AIProfileResponse,
+    AIReportDraftResponse,
+)
 
 __all__ = [
     "UserCreate",
@@ -79,4 +89,12 @@ __all__ = [
     "FamilySettingsResponse",
     "NotificationListResponse",
     "NotificationResponse",
+    "AIAlbumSuggestionResponse",
+    "AIAlbumSuggestionReview",
+    "AIProviderResponse",
+    "AIPersonaResponse",
+    "AIStatusResponse",
+    "AIJobResponse",
+    "AIProfileResponse",
+    "AIReportDraftResponse",
 ]

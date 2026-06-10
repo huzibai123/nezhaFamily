@@ -23,6 +23,7 @@ from app.schemas.post import (
 from app.core.security import get_current_user
 from app.core.media_utils import normalize_media_item_for_storage, sign_media_item_for_response
 from app.api.notifications import build_new_post_message, create_notifications_for_recipients
+from app.tasks.ai_housekeeper import generate_ai_comment
 
 router = APIRouter()
 
@@ -53,7 +54,10 @@ async def create_post(
     db.add(post)
     await db.flush()
 
-    members_query = select(User.id).where(User.id != current_user.id)
+    members_query = select(User.id).where(
+        User.id != current_user.id,
+        User.is_system.is_(False),
+    )
     members_result = await db.execute(members_query)
     await create_notifications_for_recipients(
         db,
@@ -69,6 +73,11 @@ async def create_post(
 
     await db.commit()
     await db.refresh(post)
+    try:
+        generate_ai_comment.delay(str(post.id))
+    except Exception:
+        # AI 管家不可用不能影响发帖主流程。
+        pass
 
     # 构造响应
     return PostResponse(
@@ -251,8 +260,11 @@ async def update_post(
     if not post:
         raise HTTPException(status_code=404, detail="帖子不存在")
 
-    # 验证权限
-    if post.author_id != current_user.id:
+    author = await db.get(User, post.author_id)
+    can_edit_system_post = bool(
+        current_user.role == "admin" and author and author.is_system
+    )
+    if post.author_id != current_user.id and not can_edit_system_post:
         raise HTTPException(status_code=403, detail="无权修改此帖子")
 
     content_was_provided = "content" in post_data.model_fields_set
@@ -294,8 +306,8 @@ async def update_post(
     return PostResponse(
         id=post.id,
         author_id=post.author_id,
-        author_username=current_user.username,
-        author_avatar_url=current_user.avatar_url,
+        author_username=author.username if author else current_user.username,
+        author_avatar_url=author.avatar_url if author else current_user.avatar_url,
         content=_response_content(post.content),
         media_urls=[MediaItem(**sign_media_item_for_response(m)) for m in (post.media_urls or [])],
         like_count=likes_count,

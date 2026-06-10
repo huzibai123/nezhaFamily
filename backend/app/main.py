@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
-from app.api import auth, users, posts, comments, likes, media, albums, events, admin, notifications
+from app.api import auth, users, posts, comments, likes, media, albums, events, admin, notifications, ai
 
 # 创建 FastAPI 应用实例
 # 生产环境（DEBUG=False）禁用 API 文档，避免暴露接口定义
@@ -56,3 +56,5 @@ app.include_router(albums.router, prefix=settings.API_V1_PREFIX, tags=["相册"]
 app.include_router(events.router, prefix=settings.API_V1_PREFIX, tags=["日历"])
 app.include_router(admin.router, prefix=settings.API_V1_PREFIX, tags=["管理员"])
 app.include_router(notifications.router, prefix=settings.API_V1_PREFIX, tags=["通知"])
+app.include_router(ai.admin_router, prefix=settings.API_V1_PREFIX, tags=["AI 管家"])
+app.include_router(ai.router, prefix=settings.API_V1_PREFIX, tags=["AI 管家"])

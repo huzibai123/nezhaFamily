@@ -10,6 +10,13 @@ from importlib import import_module
 from typing import Any
 
 _MODEL_EXPORTS = {
+    "AIProviderConfig": "app.models.ai",
+    "AIPersona": "app.models.ai",
+    "AIJob": "app.models.ai",
+    "AIContentInsight": "app.models.ai",
+    "AIProfile": "app.models.ai",
+    "AIAlbumSuggestion": "app.models.ai",
+    "AIReportDraft": "app.models.ai",
     "User": "app.models.user",
     "Post": "app.models.post",
     "Comment": "app.models.comment",

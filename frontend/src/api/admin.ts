@@ -165,6 +165,141 @@ export interface AdminUserUpdate {
   bio?: string | null
 }
 
+export type AIProviderStatus =
+  | 'disabled'
+  | 'active'
+  | 'paused_billing_or_auth'
+  | 'paused_rate_limit'
+  | 'paused_error'
+  | string
+
+export interface AIProvider {
+  id: string
+  name: string
+  base_url: string
+  text_model: string
+  vision_model?: string | null
+  timeout_seconds: number
+  enabled: boolean
+  status: AIProviderStatus
+  has_api_key: boolean
+  failure_count: number
+  last_error?: string | null
+  paused_reason?: string | null
+  last_checked_at?: string | null
+  notified_pause_at?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface AIProviderUpdate {
+  name: string
+  base_url: string
+  api_key?: string | null
+  text_model: string
+  vision_model?: string | null
+  timeout_seconds: number
+  enabled: boolean
+}
+
+export interface AIProviderTestResponse {
+  ok: boolean
+  status: AIProviderStatus
+  message: string
+}
+
+export interface AIStatus {
+  enabled: boolean
+  status: AIProviderStatus
+  provider?: AIProvider | null
+  personas_enabled: number
+  auto_comment_personas: number
+}
+
+export interface AIPersona {
+  id: string
+  user_id?: string | null
+  name: string
+  avatar_url?: string | null
+  persona_type: string
+  tone?: string | null
+  bio?: string | null
+  enabled: boolean
+  auto_comment_enabled: boolean
+  report_enabled: boolean
+  album_suggestion_enabled: boolean
+  sort_order: number
+  created_at: string
+  updated_at: string
+}
+
+export type AIPersonaPayload = Omit<AIPersona, 'id' | 'user_id' | 'created_at' | 'updated_at'>
+
+export interface AIJob {
+  id: string
+  job_type: string
+  status: string
+  target_type?: string | null
+  target_id?: string | null
+  persona_id?: string | null
+  progress_current: number
+  progress_total: number
+  retry_count: number
+  max_retries: number
+  error_message?: string | null
+  result: Record<string, unknown>
+  created_by?: string | null
+  started_at?: string | null
+  completed_at?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface AIProfile {
+  id: string
+  subject_type: string
+  subject_id?: string | null
+  title: string
+  summary?: string | null
+  traits: string[]
+  preferences: string[]
+  memories: string[]
+  editable_notes?: string | null
+  updated_by?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface AIReportDraft {
+  id: string
+  persona_id?: string | null
+  period_type: string
+  period_start: string
+  period_end: string
+  title: string
+  content: string
+  status: string
+  source_metadata: Record<string, unknown>
+  created_by?: string | null
+  published_post_id?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface AIAlbumSuggestion {
+  id: string
+  target_type: string
+  target_id: string
+  album_id?: string | null
+  suggested_album_name?: string | null
+  reason?: string | null
+  status: string
+  created_by_persona_id?: string | null
+  reviewed_by?: string | null
+  reviewed_at?: string | null
+  created_at: string
+}
+
 export function getAdminOverview(): Promise<AdminOverview> {
   return api.get('/admin/overview')
 }
@@ -216,4 +351,75 @@ export function uploadThemeAsset(
     params: { kind },
     headers: { 'Content-Type': 'multipart/form-data' },
   })
+}
+
+export function getAIStatus(): Promise<AIStatus> {
+  return api.get('/admin/ai/status')
+}
+
+export function updateAIProvider(data: AIProviderUpdate): Promise<AIProvider> {
+  return api.put('/admin/ai/providers/default', data)
+}
+
+export function testAIProvider(): Promise<AIProviderTestResponse> {
+  return api.post('/admin/ai/providers/default/test')
+}
+
+export function getAIPersonas(): Promise<AIPersona[]> {
+  return api.get('/admin/ai/personas')
+}
+
+export function createAIPersona(data: AIPersonaPayload): Promise<AIPersona> {
+  return api.post('/admin/ai/personas', data)
+}
+
+export function updateAIPersona(
+  personaId: string,
+  data: Partial<AIPersonaPayload>
+): Promise<AIPersona> {
+  return api.patch(`/admin/ai/personas/${personaId}`, data)
+}
+
+export function deleteAIPersona(personaId: string): Promise<void> {
+  return api.delete(`/admin/ai/personas/${personaId}`)
+}
+
+export function getAIJobs(): Promise<AIJob[]> {
+  return api.get('/admin/ai/jobs')
+}
+
+export function createAIJob(jobType: 'history_learning' | 'album_suggestions'): Promise<AIJob> {
+  return api.post('/admin/ai/jobs', { job_type: jobType })
+}
+
+export function getAIProfiles(): Promise<AIProfile[]> {
+  return api.get('/admin/ai/profiles')
+}
+
+export function getAIReports(): Promise<AIReportDraft[]> {
+  return api.get('/admin/ai/reports')
+}
+
+export function createAIReport(data: {
+  period_type: 'week' | 'month' | 'custom'
+  period_start: string
+  period_end: string
+  persona_id?: string | null
+}): Promise<AIReportDraft> {
+  return api.post('/admin/ai/reports', data)
+}
+
+export function publishAIReport(reportId: string): Promise<AIReportDraft> {
+  return api.post(`/admin/ai/reports/${reportId}/publish`)
+}
+
+export function getAIAlbumSuggestions(): Promise<AIAlbumSuggestion[]> {
+  return api.get('/admin/ai/album-suggestions')
+}
+
+export function reviewAIAlbumSuggestion(
+  suggestionId: string,
+  data: { action: 'approve' | 'reject'; album_id?: string | null; album_name?: string | null }
+): Promise<AIAlbumSuggestion> {
+  return api.post(`/admin/ai/album-suggestions/${suggestionId}/review`, data)
 }

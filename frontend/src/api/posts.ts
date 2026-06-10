@@ -40,6 +40,10 @@ export interface Comment {
   parent_id?: string
   like_count: number
   is_liked: boolean
+  is_ai_generated?: boolean
+  ai_persona_id?: string | null
+  edited_by?: string | null
+  edited_at?: string | null
   created_at: string
   updated_at: string
   replies?: Comment[]
@@ -89,6 +93,11 @@ export function getComments(postId: string): Promise<CommentListResponse> {
 // 创建评论
 export function createComment(postId: string, content: string, parentId?: string): Promise<Comment> {
   return api.post(`/posts/${postId}/comments`, { content, parent_id: parentId })
+}
+
+// 更新评论
+export function updateComment(commentId: string, content: string): Promise<Comment> {
+  return api.patch(`/comments/${commentId}`, { content })
 }
 
 // 删除评论

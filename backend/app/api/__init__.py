@@ -1,7 +1,7 @@
 """
 API 路由模块
 """
-from app.api import auth, users, posts, comments, likes, media, albums, events, admin, notifications
+from app.api import auth, users, posts, comments, likes, media, albums, events, admin, notifications, ai
 
 __all__ = [
     "auth",
@@ -14,4 +14,5 @@ __all__ = [
     "events",
     "admin",
     "notifications",
+    "ai",
 ]

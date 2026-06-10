@@ -168,7 +168,8 @@ curl http://localhost:3000
 
 **需要帮助？**
 - 查看 API 文档：http://localhost:8000/api/docs
-- 查看开发文档：`DEVELOPMENT_COMPLETE.md`
+- 查看部署说明：`docker/DEPLOY.md`
+- 查看产品需求：`nezha-family.prd.md`
 
 ---
 

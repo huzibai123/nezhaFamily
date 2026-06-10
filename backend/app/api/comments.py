@@ -3,6 +3,8 @@
 """
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import datetime, timezone
+
 from sqlalchemy import delete as sql_delete, select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,7 +13,7 @@ from app.models.user import User
 from app.models.post import Post
 from app.models.comment import Comment
 from app.models.like import Like
-from app.schemas.comment import CommentCreate, CommentResponse, CommentListResponse
+from app.schemas.comment import CommentCreate, CommentResponse, CommentListResponse, CommentUpdate
 from app.core.security import get_current_user
 from app.api.notifications import (
     build_comment_message,
@@ -124,6 +126,10 @@ async def create_comment(
         is_liked=False,
         created_at=comment.created_at,
         updated_at=comment.updated_at,
+        is_ai_generated=comment.is_ai_generated,
+        ai_persona_id=comment.ai_persona_id,
+        edited_by=comment.edited_by,
+        edited_at=comment.edited_at,
         replies=None,
     )
 
@@ -204,6 +210,10 @@ async def get_comments(
             is_liked=comment.id in user_likes,
             created_at=comment.created_at,
             updated_at=comment.updated_at,
+            is_ai_generated=comment.is_ai_generated,
+            ai_persona_id=comment.ai_persona_id,
+            edited_by=comment.edited_by,
+            edited_at=comment.edited_at,
             replies=[],
         )
 
@@ -224,6 +234,68 @@ async def get_comments(
     return CommentListResponse(
         comments=top_level_comments,
         total=len(all_comments),
+    )
+
+
+@router.patch("/comments/{comment_id}", response_model=CommentResponse)
+async def update_comment(
+    comment_id: UUID,
+    comment_data: CommentUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """更新评论；AI 评论仅管理员可修正。"""
+    result = await db.execute(select(Comment).where(Comment.id == comment_id))
+    comment = result.scalar_one_or_none()
+    if not comment:
+        raise HTTPException(status_code=404, detail="评论不存在")
+
+    if comment.is_ai_generated:
+        if current_user.role != "admin":
+            raise HTTPException(status_code=403, detail="只有管理员可以修改 AI 评论")
+    elif comment.author_id != current_user.id:
+        raise HTTPException(status_code=403, detail="无权修改此评论")
+
+    comment.content = comment_data.content
+    comment.edited_by = current_user.id
+    comment.edited_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(comment)
+
+    author = await db.get(User, comment.author_id)
+    if not author:
+        raise HTTPException(status_code=404, detail="作者不存在")
+
+    likes_count_result = await db.execute(
+        select(func.count()).select_from(Like).where(
+            Like.target_type == "comment",
+            Like.target_id == comment.id,
+        )
+    )
+    user_like_result = await db.execute(
+        select(Like).where(
+            Like.user_id == current_user.id,
+            Like.target_type == "comment",
+            Like.target_id == comment.id,
+        )
+    )
+    return CommentResponse(
+        id=comment.id,
+        post_id=comment.post_id,
+        author_id=comment.author_id,
+        author_username=author.username,
+        author_avatar_url=author.avatar_url,
+        content=comment.content,
+        parent_id=comment.parent_id,
+        like_count=likes_count_result.scalar() or 0,
+        is_liked=user_like_result.scalar_one_or_none() is not None,
+        created_at=comment.created_at,
+        updated_at=comment.updated_at,
+        is_ai_generated=comment.is_ai_generated,
+        ai_persona_id=comment.ai_persona_id,
+        edited_by=comment.edited_by,
+        edited_at=comment.edited_at,
+        replies=[],
     )
 
 

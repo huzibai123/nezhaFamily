@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Bell, CalendarDays, Home, Image, Images, Plus, Settings, UserCircle } from 'lucide-vue-next'
+import { Bell, Bot, CalendarDays, Home, Image, Images, Plus, Settings, UserCircle } from 'lucide-vue-next'
 import { useAuth } from '@/composables/useAuth'
 import FamilySeal from '@/components/FamilySeal.vue'
 
@@ -24,7 +24,12 @@ const navItems = computed(() => [
   { label: '日历', to: '/calendar', icon: CalendarDays },
   { label: '通知', to: '/notifications', icon: Bell },
   ...(user.value ? [{ label: '我的主页', to: `/profile/${user.value.id}`, icon: UserCircle }] : []),
-  ...(user.value?.role === 'admin' ? [{ label: '家庭管理', to: '/admin', icon: Settings }] : []),
+  ...(user.value?.role === 'admin'
+    ? [
+        { label: '家庭管理', to: '/admin', icon: Settings },
+        { label: 'AI 管家', to: '/admin/ai', icon: Bot },
+      ]
+    : []),
 ])
 
 const userInitial = computed(() => user.value?.username?.slice(0, 1).toUpperCase() || '家')

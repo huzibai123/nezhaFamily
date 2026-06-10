@@ -75,6 +75,15 @@ class Settings(BaseSettings):
     CELERY_BROKER_URL: str = "redis://localhost:6379/1"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/2"
 
+    # AI 管家配置（默认关闭；API Key 可由数据库配置或环境变量提供）
+    AI_ENABLED: bool = False
+    AI_API_KEY: str = ""
+    AI_DEFAULT_BASE_URL: str = "https://api.openai.com/v1"
+    AI_DEFAULT_TEXT_MODEL: str = "gpt-4o-mini"
+    AI_DEFAULT_VISION_MODEL: str = "gpt-4o-mini"
+    AI_REQUEST_TIMEOUT_SECONDS: int = 30
+    AI_FAILURE_THRESHOLD: int = 3
+
     # 邀请码配置
     INVITE_CODE_LENGTH: int = 8
     INVITE_CODE_EXPIRES_DAYS: int = 30

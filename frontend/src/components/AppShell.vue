@@ -11,11 +11,13 @@ const props = withDefaults(
     familyName?: string
     pageTitle?: string
     pageDescription?: string
+    contentWidth?: 'normal' | 'wide'
   }>(),
   {
     familyName: '',
     pageTitle: '',
     pageDescription: '',
+    contentWidth: 'normal',
   }
 )
 
@@ -23,6 +25,19 @@ const slots = useSlots()
 const hasRightRail = computed(() => Boolean(slots.right))
 const { familyName: configuredFamilyName, logoUrl } = useFamilySettings()
 const displayFamilyName = computed(() => props.familyName || configuredFamilyName.value)
+const shellWidthClass = computed(() => {
+  if (props.contentWidth === 'wide') return 'max-w-[92rem]'
+  return hasRightRail.value ? 'max-w-[76rem]' : 'max-w-[58rem]'
+})
+const contentGridClass = computed(() => {
+  if (!hasRightRail.value) {
+    return props.contentWidth === 'wide' ? 'max-w-[92rem]' : 'max-w-[58rem]'
+  }
+  if (props.contentWidth === 'wide') {
+    return 'max-w-[92rem] lg:grid-cols-[minmax(0,1fr)_17rem] xl:grid-cols-[minmax(0,1fr)_20rem] 2xl:grid-cols-[minmax(0,1fr)_21rem]'
+  }
+  return 'max-w-[76rem] lg:grid-cols-[minmax(0,1fr)_17rem] xl:grid-cols-[minmax(0,54rem)_20rem] 2xl:grid-cols-[minmax(0,58rem)_21rem]'
+})
 </script>
 
 <template>
@@ -37,7 +52,7 @@ const displayFamilyName = computed(() => props.familyName || configuredFamilyNam
         <main class="shell-main mx-auto w-full px-4 pb-14 pt-5 sm:px-6 lg:px-8 lg:py-8 xl:px-10">
           <div
             class="mx-auto mb-5 w-full"
-            :class="hasRightRail ? 'max-w-[76rem]' : 'max-w-[58rem]'"
+            :class="shellWidthClass"
           >
             <MediaSearchPanel />
           </div>
@@ -45,7 +60,7 @@ const displayFamilyName = computed(() => props.familyName || configuredFamilyNam
           <div
             v-if="pageTitle || pageDescription || $slots.header"
             class="mx-auto mb-6 w-full"
-            :class="hasRightRail ? 'max-w-[76rem]' : 'max-w-[58rem]'"
+            :class="shellWidthClass"
           >
             <slot name="header">
               <div class="space-y-2">
@@ -61,11 +76,7 @@ const displayFamilyName = computed(() => props.familyName || configuredFamilyNam
 
           <div
             class="mx-auto grid w-full gap-6 lg:gap-7 xl:gap-8"
-            :class="
-              hasRightRail
-                ? 'max-w-[76rem] lg:grid-cols-[minmax(0,1fr)_17rem] xl:grid-cols-[minmax(0,54rem)_20rem] 2xl:grid-cols-[minmax(0,58rem)_21rem]'
-                : 'max-w-[58rem]'
-            "
+            :class="contentGridClass"
           >
             <section class="min-w-0">
               <slot />

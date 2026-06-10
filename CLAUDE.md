@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## ⚠️ 当前代码状态（2026-06-07 更新）
 
-**✅ 项目已完成 MVP + 生产加固**（详见 `COMPLETION_REPORT.md`）
+**✅ 项目已完成 MVP + 生产加固**（产品背景见 `nezha-family.prd.md`，部署说明见 `docker/DEPLOY.md`）
 
 - **几乎所有代码都未纳入 git**：`git ls-files` 只有少量文件。`backend/`、`frontend/`、`docker/` 等全部处于 untracked 状态，仅有一次 `first commit`。改动无版本保护，谨慎操作。
 

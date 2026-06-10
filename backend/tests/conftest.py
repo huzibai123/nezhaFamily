@@ -15,6 +15,7 @@ from app.db.base import Base, import_all_models
 from app.db.session import get_db
 from app.models.user import User
 from app.core.security import get_password_hash
+from app.tasks import ai_housekeeper as ai_tasks
 from app.api import media as media_api
 
 import_all_models()
@@ -42,6 +43,9 @@ def _task_delay_stub(*args, **kwargs):
 def disable_celery_tasks(monkeypatch):
     """Keep API tests focused on request behavior instead of Redis/Celery availability."""
     monkeypatch.setattr(media_api.compress_image, "delay", _task_delay_stub)
+    monkeypatch.setattr(ai_tasks.generate_ai_comment, "delay", _task_delay_stub)
+    monkeypatch.setattr(ai_tasks.run_ai_album_suggestions, "delay", _task_delay_stub)
+    monkeypatch.setattr(ai_tasks.run_ai_history_learning, "delay", _task_delay_stub)
 
 
 @pytest_asyncio.fixture(scope="function")

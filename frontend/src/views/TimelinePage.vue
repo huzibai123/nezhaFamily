@@ -1,6 +1,7 @@
 <template>
   <AppShell
     class="timeline-page"
+    content-width="wide"
     page-title="家庭今日"
     :page-description="`私有记忆中枢 · ${todayLabel}`"
   >
@@ -27,7 +28,7 @@
       </div>
     </template>
 
-    <div class="space-y-5">
+    <div class="space-y-5 lg:hidden">
         <div
           v-if="errorMessage"
           class="rounded-xl border px-4 py-3 text-sm"
@@ -199,6 +200,183 @@
         </section>
     </div>
 
+    <div class="hidden lg:block">
+      <div
+        v-if="errorMessage"
+        class="mb-5 rounded-xl border px-4 py-3 text-sm"
+        style="background:rgba(217,74,74,0.08);border-color:rgba(217,74,74,0.22);color:var(--accent)"
+      >
+        {{ errorMessage }}
+      </div>
+
+      <section class="desktop-archive rounded-xl border border-[var(--border)] bg-[var(--surface-card)] shadow-[var(--shadow-panel)]">
+        <div class="desktop-archive__top border-b border-[var(--border)] p-5 xl:p-6">
+          <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
+            <div>
+              <p class="text-xs font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">
+                Family archive
+              </p>
+              <h2 class="mt-2 text-2xl font-semibold tracking-normal text-[var(--text)]">
+                家庭记忆档案
+              </h2>
+              <p class="mt-2 max-w-3xl text-sm leading-6 text-[var(--text-secondary)]">
+                桌面端按批次浏览，筛选和概览固定在左侧，右侧专注看内容。
+              </p>
+            </div>
+            <router-link
+              to="/publish"
+              class="primary-button inline-flex items-center justify-center rounded-lg bg-[var(--text)] px-4 py-2.5 text-sm font-medium text-[var(--surface)]"
+            >
+              快速发布
+            </router-link>
+          </div>
+
+          <div class="mt-5 grid gap-3 xl:grid-cols-4">
+            <article v-for="stat in desktopStats" :key="stat.label" class="desktop-stat rounded-lg border border-[var(--border)] bg-[var(--surface-panel)] p-4">
+              <p class="text-xs text-[var(--text-muted)]">{{ stat.label }}</p>
+              <p class="mt-2 text-2xl font-semibold leading-none text-[var(--text)]">{{ stat.value }}</p>
+              <p class="mt-1 text-xs text-[var(--text-muted)]">{{ stat.meta }}</p>
+            </article>
+          </div>
+        </div>
+
+        <div class="grid min-h-[42rem] xl:grid-cols-[20rem_minmax(0,1fr)]">
+          <aside class="desktop-archive__side border-b border-[var(--border)] p-5 xl:border-b-0 xl:border-r xl:p-6">
+            <section class="space-y-4">
+              <div>
+                <p class="text-xs font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">Filters</p>
+                <h3 class="mt-2 text-lg font-semibold text-[var(--text)]">筛选记忆</h3>
+              </div>
+              <div class="space-y-3">
+                <input
+                  v-model="searchKeyword"
+                  class="filter-input w-full rounded-lg border border-[var(--border)] bg-[var(--surface-card)] px-3 py-2.5 text-sm text-[var(--text)] outline-none placeholder:text-[var(--text-muted)]"
+                  placeholder="搜索文字、家人、日期..."
+                />
+                <select
+                  v-model="selectedMember"
+                  class="filter-input w-full rounded-lg border border-[var(--border)] bg-[var(--surface-card)] px-3 py-2.5 text-sm text-[var(--text)] outline-none"
+                >
+                  <option value="">全部成员</option>
+                  <option v-for="name in memberNames" :key="name" :value="name">{{ name }}</option>
+                </select>
+                <select
+                  v-model="mediaFilter"
+                  class="filter-input w-full rounded-lg border border-[var(--border)] bg-[var(--surface-card)] px-3 py-2.5 text-sm text-[var(--text)] outline-none"
+                >
+                  <option value="all">全部类型</option>
+                  <option value="image">有照片</option>
+                  <option value="video">有视频</option>
+                  <option value="text">纯文字</option>
+                </select>
+              </div>
+              <button
+                @click="resetFilters"
+                class="soft-button w-full rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)]"
+                type="button"
+              >
+                清空筛选
+              </button>
+            </section>
+
+            <section v-if="anniversaryPosts.length" class="mt-7 rounded-xl border border-[var(--border)] bg-[var(--surface-panel)] p-4">
+              <p class="text-xs font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">On this day</p>
+              <h3 class="mt-2 text-base font-semibold text-[var(--text)]">那年今日</h3>
+              <p class="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
+                找到 {{ anniversaryPosts.length }} 条旧记忆。
+              </p>
+              <router-link
+                :to="`/post/${anniversaryPosts[0].id}`"
+                class="context-link mt-3"
+              >
+                看一眼
+              </router-link>
+            </section>
+
+            <section class="mt-7">
+              <p class="text-xs font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">Members</p>
+              <div class="mt-4 space-y-2">
+                <button
+                  v-for="name in memberNames"
+                  :key="name"
+                  @click="selectedMember = name"
+                  class="member-filter-row flex w-full items-center gap-3 rounded-lg border border-transparent px-2 py-2 text-left"
+                  type="button"
+                >
+                  <span class="grid h-8 w-8 place-items-center rounded-lg bg-[var(--accent-soft)] text-sm font-semibold text-[var(--accent)]">
+                    {{ initial(name) }}
+                  </span>
+                  <span class="min-w-0">
+                    <span class="block truncate text-sm font-medium text-[var(--text)]">{{ name }}</span>
+                    <span class="text-xs text-[var(--text-muted)]">{{ roleFor(name) }}</span>
+                  </span>
+                </button>
+              </div>
+            </section>
+          </aside>
+
+          <section class="desktop-archive__content min-w-0 p-5 xl:p-6">
+            <div class="mb-5 flex flex-col gap-3 border-b border-[var(--border)] pb-4 xl:flex-row xl:items-center xl:justify-between">
+              <div>
+                <p class="text-sm font-medium text-[var(--text)]">
+                  当前显示 {{ pagedPosts.length }} / {{ filteredPosts.length }} 条记忆
+                </p>
+                <p class="mt-1 text-xs text-[var(--text-muted)]">
+                  第 {{ currentPage }} / {{ totalPages }} 页
+                </p>
+              </div>
+              <div class="flex items-center gap-2">
+                <button
+                  @click="previousPage"
+                  :disabled="currentPage <= 1"
+                  class="soft-button rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)] disabled:opacity-40"
+                  type="button"
+                >
+                  上一页
+                </button>
+                <button
+                  @click="nextPage"
+                  :disabled="currentPage >= totalPages"
+                  class="soft-button rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)] disabled:opacity-40"
+                  type="button"
+                >
+                  下一页
+                </button>
+              </div>
+            </div>
+
+            <div v-if="loading" class="grid gap-4 xl:grid-cols-2">
+              <div
+                v-for="i in 4"
+                :key="i"
+                class="h-72 animate-pulse rounded-xl border border-[var(--border)] bg-[var(--surface-panel)]"
+              />
+            </div>
+
+            <section
+              v-else-if="!filteredPosts.length"
+              class="empty-state rounded-xl border border-[var(--border)] bg-[var(--surface-panel)] p-8"
+            >
+              <h3 class="text-xl font-semibold text-[var(--text)]">没有匹配的家庭动态</h3>
+              <p class="mt-3 text-sm leading-6 text-[var(--text-secondary)]">
+                可以清空筛选，或换一个成员、媒体类型继续找。
+              </p>
+            </section>
+
+            <div v-else class="grid gap-4 2xl:grid-cols-2">
+              <PostCard
+                v-for="post in pagedPosts"
+                :key="post.id"
+                :post="post"
+                @click="go"
+                @like="like"
+              />
+            </div>
+          </section>
+        </div>
+      </section>
+    </div>
+
     <template #right>
       <div class="space-y-4">
         <RightRail>
@@ -262,7 +440,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import { getPosts, togglePostLike, type Post } from '@/api/posts'
@@ -285,6 +463,8 @@ const searchKeyword = ref('')
 const selectedMember = ref('')
 const mediaFilter = ref<'all' | 'image' | 'video' | 'text'>('all')
 const isDesktop = ref(false)
+const currentPage = ref(1)
+const desktopPageSize = 8
 let desktopMediaQuery: MediaQueryList | null = null
 
 const todayLabel = new Intl.DateTimeFormat('zh-CN', {
@@ -300,6 +480,13 @@ const mediaCount = computed(() =>
 const interactionCount = computed(() =>
   posts.value.reduce((count, post) => count + post.like_count + post.comment_count, 0),
 )
+
+const desktopStats = computed(() => [
+  { label: '全部记忆', value: posts.value.length, meta: '时间线动态' },
+  { label: '影像', value: mediaCount.value, meta: '照片和视频' },
+  { label: '互动', value: interactionCount.value, meta: '点赞与评论' },
+  { label: '本月', value: postsThisMonth.value, meta: '新增动态' },
+])
 
 const postsThisMonth = computed(() => {
   const now = new Date()
@@ -360,6 +547,16 @@ const groupedPosts = computed<PostGroup[]>(() => {
   return Array.from(groups, ([label, groupPosts]) => ({ label, posts: groupPosts }))
 })
 
+const totalPages = computed(() => Math.max(1, Math.ceil(filteredPosts.value.length / desktopPageSize)))
+const pagedPosts = computed(() => {
+  const start = (currentPage.value - 1) * desktopPageSize
+  return filteredPosts.value.slice(start, start + desktopPageSize)
+})
+
+watch([searchKeyword, selectedMember, mediaFilter], () => {
+  currentPage.value = 1
+})
+
 onMounted(async () => {
   setupViewportWatcher()
   loading.value = true
@@ -392,6 +589,20 @@ async function like(p: Post) {
 function handleLogout() {
   logout()
   router.push('/login')
+}
+
+function resetFilters() {
+  searchKeyword.value = ''
+  selectedMember.value = ''
+  mediaFilter.value = 'all'
+}
+
+function previousPage() {
+  currentPage.value = Math.max(1, currentPage.value - 1)
+}
+
+function nextPage() {
+  currentPage.value = Math.min(totalPages.value, currentPage.value + 1)
 }
 
 function dateGroupLabel(value: string): string {
@@ -450,6 +661,9 @@ function syncDesktopState(event?: MediaQueryListEvent) {
 .quick-publish,
 .anniversary-card,
 .memory-filter,
+.desktop-archive,
+.desktop-stat,
+.member-filter-row,
 .filter-input,
 .empty-state,
 .context-link,
@@ -512,6 +726,38 @@ function syncDesktopState(event?: MediaQueryListEvent) {
 .quick-publish,
 .empty-state {
   box-shadow: 0 18px 45px rgba(47, 39, 35, 0.09);
+}
+
+.desktop-archive {
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.36), rgba(45, 108, 104, 0.05)),
+    var(--surface-card);
+}
+
+.desktop-archive__top {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.24), rgba(201, 67, 47, 0.04));
+}
+
+.desktop-archive__side {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(45, 108, 104, 0.05)),
+    var(--surface-panel);
+}
+
+.desktop-archive__content {
+  background: rgba(255, 255, 252, 0.18);
+}
+
+.desktop-stat:hover,
+.member-filter-row:hover {
+  border-color: rgba(201, 67, 47, 0.16);
+  box-shadow: 0 14px 34px rgba(47, 39, 35, 0.08);
+  transform: translateY(-1px);
+}
+
+.member-filter-row:hover {
+  background: rgba(201, 67, 47, 0.07);
 }
 
 .quick-publish {
@@ -582,6 +828,11 @@ function syncDesktopState(event?: MediaQueryListEvent) {
   transition: background-color 160ms ease, color 160ms ease;
 }
 
+.desktop-archive .context-link {
+  border: 1px solid var(--border);
+  background: var(--surface-card);
+}
+
 .timeline-group {
   animation: timeline-group-in 360ms ease-out both;
 }
@@ -635,6 +886,9 @@ function syncDesktopState(event?: MediaQueryListEvent) {
     .anniversary-card,
     .anniversary-card::after,
     .memory-filter,
+    .desktop-archive,
+    .desktop-stat,
+    .member-filter-row,
     .filter-input,
     .empty-state,
   .context-link,
@@ -653,6 +907,8 @@ function syncDesktopState(event?: MediaQueryListEvent) {
   .quick-publish:hover,
   .anniversary-card:hover,
   .memory-filter:hover,
+  .desktop-stat:hover,
+  .member-filter-row:hover,
   .empty-state:hover,
   .member-row:hover,
   .rail-stat:hover {

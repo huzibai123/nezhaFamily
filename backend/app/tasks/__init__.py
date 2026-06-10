@@ -24,5 +24,17 @@ celery_app.conf.update(
 
 # 导入具体的任务（必须导入，让 Celery worker 能发现这些任务）
 from app.tasks.media_processing import compress_image, generate_thumbnail  # noqa: E402
+from app.tasks.ai_housekeeper import (  # noqa: E402
+    generate_ai_comment,
+    run_ai_album_suggestions,
+    run_ai_history_learning,
+)
 
-__all__ = ["celery_app", "compress_image", "generate_thumbnail"]
+__all__ = [
+    "celery_app",
+    "compress_image",
+    "generate_thumbnail",
+    "generate_ai_comment",
+    "run_ai_album_suggestions",
+    "run_ai_history_learning",
+]

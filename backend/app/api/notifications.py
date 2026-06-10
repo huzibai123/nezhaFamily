@@ -37,6 +37,10 @@ async def create_notification(
     if recipient_id == actor.id:
         return None
 
+    recipient = await db.get(User, recipient_id)
+    if not recipient or recipient.is_system:
+        return None
+
     if dedupe:
         existing_query = select(Notification.id).where(
             Notification.recipient_id == recipient_id,

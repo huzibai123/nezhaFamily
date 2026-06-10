@@ -49,6 +49,49 @@
         </article>
       </section>
 
+      <section class="admin-panel rounded-xl border border-[var(--border)] bg-[var(--surface-card)] p-5 shadow-[var(--shadow-panel)] sm:p-6">
+        <div class="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+          <div class="flex min-w-0 gap-4">
+            <span class="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-[var(--accent-soft)] text-[var(--accent)]">
+              <Bot :size="22" stroke-width="1.9" aria-hidden="true" />
+            </span>
+            <div class="min-w-0">
+              <p class="text-xs font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">AI housekeeper</p>
+              <div class="mt-2 flex flex-wrap items-center gap-2">
+                <h2 class="text-xl font-semibold text-[var(--text)]">AI 家庭管家</h2>
+                <span class="rounded-md px-2 py-1 text-[11px] font-medium" :class="aiStatusClass(aiStatus?.status)">
+                  {{ aiStatusLabel(aiStatus?.status) }}
+                </span>
+              </div>
+              <p class="mt-2 max-w-2xl text-sm leading-6 text-[var(--text-secondary)]">
+                {{ aiStatusSummary }}
+              </p>
+            </div>
+          </div>
+          <RouterLink
+            to="/admin/ai"
+            class="primary-button inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--text)] px-4 py-2.5 text-sm font-medium text-[var(--surface)]"
+          >
+            进入 AI 配置
+          </RouterLink>
+        </div>
+
+        <div class="mt-5 grid gap-3 sm:grid-cols-3">
+          <div class="rounded-lg border border-[var(--border)] bg-[var(--surface-panel)] p-4">
+            <p class="text-lg font-semibold text-[var(--text)]">{{ aiStatus?.personas_enabled ?? 0 }}</p>
+            <p class="mt-1 text-xs text-[var(--text-muted)]">启用角色</p>
+          </div>
+          <div class="rounded-lg border border-[var(--border)] bg-[var(--surface-panel)] p-4">
+            <p class="text-lg font-semibold text-[var(--text)]">{{ aiStatus?.auto_comment_personas ?? 0 }}</p>
+            <p class="mt-1 text-xs text-[var(--text-muted)]">自动评论</p>
+          </div>
+          <div class="rounded-lg border border-[var(--border)] bg-[var(--surface-panel)] p-4">
+            <p class="text-lg font-semibold text-[var(--text)]">{{ aiPendingSuggestions.length }}</p>
+            <p class="mt-1 text-xs text-[var(--text-muted)]">待审建议</p>
+          </div>
+        </div>
+      </section>
+
       <section class="grid gap-4 xl:grid-cols-3">
         <article class="admin-panel rounded-xl border border-[var(--border)] bg-[var(--surface-card)] p-4 shadow-[var(--shadow-panel)] sm:p-5">
           <div class="border-b border-[var(--border)] pb-3">
@@ -569,7 +612,15 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { Check, Image as ImageIcon, MousePointer2, Sparkles, Trash2, Upload } from 'lucide-vue-next'
+import {
+  Bot,
+  Check,
+  Image as ImageIcon,
+  MousePointer2,
+  Sparkles,
+  Trash2,
+  Upload,
+} from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import AppShell from '@/components/AppShell.vue'
 import FamilySeal from '@/components/FamilySeal.vue'
@@ -579,6 +630,8 @@ import { useAuth } from '@/composables/useAuth'
 import {
   createAdminBackup,
   downloadAdminBackupFile,
+  getAIAlbumSuggestions,
+  getAIStatus,
   getAdminOverview,
   getAdminUsers,
   getFamilySettings,
@@ -587,6 +640,8 @@ import {
   updateFamilySettings,
   uploadThemeAsset,
   verifyAdminBackup,
+  type AIAlbumSuggestion,
+  type AIStatus,
   type AdminBackupFileKind,
   type AdminOverview,
   type AdminUser,
@@ -618,6 +673,8 @@ const { user: currentUser, refreshCurrentUser, setUser } = useAuth()
 const overview = ref<AdminOverview | null>(null)
 const users = ref<AdminUser[]>([])
 const memberDrafts = reactive<Record<string, MemberDraft>>({})
+const aiStatus = ref<AIStatus | null>(null)
+const aiAlbumSuggestions = ref<AIAlbumSuggestion[]>([])
 const message = ref('')
 const backupRunning = ref(false)
 const savingMemberId = ref('')
@@ -685,6 +742,19 @@ const recentPosters = computed(() =>
 const recentComments = computed(() => overview.value?.recent_comments ?? [])
 const recentMedia = computed(() => overview.value?.recent_media ?? [])
 const uploadWarnings = computed(() => overview.value?.upload_warnings ?? [])
+const aiPendingSuggestions = computed(() =>
+  aiAlbumSuggestions.value.filter((suggestion) => suggestion.status === 'pending')
+)
+const aiStatusSummary = computed(() => {
+  const provider = aiStatus.value?.provider
+  if (provider?.paused_reason || provider?.last_error) {
+    return provider.paused_reason || provider.last_error || 'AI 管家已暂停。'
+  }
+  if (aiStatus.value?.status === 'active') {
+    return `${provider?.name || '默认模型'} · ${provider?.text_model || '已连接'}`
+  }
+  return '默认关闭。模型、角色和自动任务已移到独立配置页。'
+})
 const themeAssetDraft = computed(() => ensureThemeAssets())
 const cursorAsset = computed(() => themeAssetDraft.value.cursor)
 const enabledOrnaments = computed(() =>
@@ -729,10 +799,18 @@ onMounted(loadAll)
 async function loadAll() {
   message.value = ''
   try {
-    const [overviewResult, usersResult, settingsResult] = await Promise.allSettled([
+    const [
+      overviewResult,
+      usersResult,
+      settingsResult,
+      aiStatusResult,
+      aiSuggestionsResult,
+    ] = await Promise.allSettled([
       getAdminOverview(),
       getAdminUsers(),
       getFamilySettings(),
+      getAIStatus(),
+      getAIAlbumSuggestions(),
     ])
 
     if (overviewResult.status === 'fulfilled') {
@@ -748,7 +826,21 @@ async function loadAll() {
       Object.assign(settings, withDefaultSettings(settingsResult.value))
     }
 
-    const failed = [overviewResult, usersResult, settingsResult].some((item) => item.status === 'rejected')
+    if (aiStatusResult.status === 'fulfilled') {
+      aiStatus.value = aiStatusResult.value
+    }
+
+    if (aiSuggestionsResult.status === 'fulfilled') {
+      aiAlbumSuggestions.value = aiSuggestionsResult.value
+    }
+
+    const failed = [
+      overviewResult,
+      usersResult,
+      settingsResult,
+      aiStatusResult,
+      aiSuggestionsResult,
+    ].some((item) => item.status === 'rejected')
     if (failed) message.value = '部分管理数据暂时不可用，已显示可加载内容。'
   } catch (error) {
     message.value = typeof error === 'string' ? error : '管理数据加载失败'
@@ -1133,6 +1225,21 @@ function backupFileLabel(fileKind: AdminBackupFileKind): string {
   if (fileKind === 'manifest') return '备份清单'
   return '数据库快照'
 }
+
+function aiStatusLabel(status?: string): string {
+  if (status === 'active') return '运行中'
+  if (status === 'paused_billing_or_auth') return '欠费或鉴权暂停'
+  if (status === 'paused_rate_limit') return '限流暂停'
+  if (status === 'paused_error') return '异常暂停'
+  return '关闭'
+}
+
+function aiStatusClass(status?: string): string {
+  if (status === 'active') return 'ai-badge-active'
+  if (status?.startsWith('paused')) return 'ai-badge-paused'
+  return 'ai-badge-disabled'
+}
+
 </script>
 
 <style scoped>
@@ -1364,6 +1471,27 @@ function backupFileLabel(fileKind: AdminBackupFileKind): string {
 .role-member {
   background: rgba(92, 121, 84, 0.12);
   color: var(--accent-leaf);
+}
+
+.ai-badge-active,
+.ai-badge-paused,
+.ai-badge-disabled {
+  border: 1px solid rgba(49, 38, 33, 0.12);
+}
+
+.ai-badge-active {
+  background: rgba(92, 121, 84, 0.14);
+  color: var(--accent-leaf);
+}
+
+.ai-badge-paused {
+  background: rgba(201, 67, 47, 0.12);
+  color: var(--accent);
+}
+
+.ai-badge-disabled {
+  background: rgba(87, 77, 69, 0.1);
+  color: var(--text-secondary);
 }
 
 .color-input {

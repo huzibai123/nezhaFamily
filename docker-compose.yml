@@ -46,6 +46,28 @@ services:
         restart: unless-stopped
 
     # FastAPI 后端服务
+    migrate:
+        build:
+            context: ./backend
+            dockerfile: ../docker/Dockerfile.backend
+            target: development
+        container_name: nezha-migrate-dev
+        environment:
+            DATABASE_URL: postgresql+asyncpg://nezha_user:nezha_dev_password@postgres:5432/nezha_family
+            SECRET_KEY: dev_secret_key_change_in_production
+            ALGORITHM: HS256
+            DEBUG: "true"
+            ENVIRONMENT: development
+        volumes:
+            - ./backend:/app
+        networks:
+            - nezha-network
+        depends_on:
+            postgres:
+                condition: service_healthy
+        restart: "no"
+        command: alembic upgrade head
+
     backend:
         build:
             context: ./backend
@@ -68,6 +90,14 @@ services:
             # 文件存储配置
             MEDIA_ROOT: /app/media
             MAX_UPLOAD_SIZE: 104857600
+            # AI 管家配置（默认关闭，可在后台管理页启用）
+            AI_API_KEY: ${AI_API_KEY:-}
+            AI_DEFAULT_BASE_URL: ${AI_DEFAULT_BASE_URL:-https://api.openai.com/v1}
+            AI_DEFAULT_TEXT_MODEL: ${AI_DEFAULT_TEXT_MODEL:-gpt-4o-mini}
+            AI_DEFAULT_VISION_MODEL: ${AI_DEFAULT_VISION_MODEL:-}
+            AI_ENABLED: ${AI_ENABLED:-false}
+            AI_REQUEST_TIMEOUT_SECONDS: ${AI_REQUEST_TIMEOUT_SECONDS:-30}
+            AI_FAILURE_THRESHOLD: ${AI_FAILURE_THRESHOLD:-3}
             # Celery 配置
             CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-nezha_redis_password}@redis:6379/1
             CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-nezha_redis_password}@redis:6379/2
@@ -81,8 +111,8 @@ services:
         networks:
             - nezha-network
         depends_on:
-            postgres:
-                condition: service_healthy
+            migrate:
+                condition: service_completed_successfully
             redis:
                 condition: service_healthy
         healthcheck:
@@ -92,7 +122,7 @@ services:
             retries: 3
             start_period: 40s
         restart: unless-stopped
-        command: sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+        command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
     # Celery Worker (异步任务处理)
     celery-worker:
@@ -104,10 +134,20 @@ services:
         environment:
             DATABASE_URL: postgresql+asyncpg://nezha_user:nezha_dev_password@postgres:5432/nezha_family
             REDIS_URL: redis://:${REDIS_PASSWORD:-nezha_redis_password}@redis:6379/0
+            SECRET_KEY: dev_secret_key_change_in_production
+            ALGORITHM: HS256
+            ACCESS_TOKEN_EXPIRE_MINUTES: 10080
             CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-nezha_redis_password}@redis:6379/1
             CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-nezha_redis_password}@redis:6379/2
             MEDIA_ROOT: /app/media
             ENVIRONMENT: development
+            AI_API_KEY: ${AI_API_KEY:-}
+            AI_DEFAULT_BASE_URL: ${AI_DEFAULT_BASE_URL:-https://api.openai.com/v1}
+            AI_DEFAULT_TEXT_MODEL: ${AI_DEFAULT_TEXT_MODEL:-gpt-4o-mini}
+            AI_DEFAULT_VISION_MODEL: ${AI_DEFAULT_VISION_MODEL:-}
+            AI_ENABLED: ${AI_ENABLED:-false}
+            AI_REQUEST_TIMEOUT_SECONDS: ${AI_REQUEST_TIMEOUT_SECONDS:-30}
+            AI_FAILURE_THRESHOLD: ${AI_FAILURE_THRESHOLD:-3}
         volumes:
             - ./backend:/app
             - media_files:/app/media
@@ -115,8 +155,8 @@ services:
         networks:
             - nezha-network
         depends_on:
-            postgres:
-                condition: service_healthy
+            migrate:
+                condition: service_completed_successfully
             redis:
                 condition: service_healthy
         restart: unless-stopped

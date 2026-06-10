@@ -10,6 +10,7 @@ Base = declarative_base()
 
 def import_all_models() -> None:
     """注册所有模型到 Base.metadata，供 Alembic 和测试建表使用。"""
+    import app.models.ai  # noqa: F401
     import app.models.album  # noqa: F401
     import app.models.comment  # noqa: F401
     import app.models.event  # noqa: F401

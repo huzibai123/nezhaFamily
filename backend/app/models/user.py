@@ -2,7 +2,7 @@
 用户模型
 包含用户认证、角色管理和邀请码机制
 """
-from sqlalchemy import Column, String, DateTime, Date, ForeignKey
+from sqlalchemy import Boolean, Column, String, DateTime, Date, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
@@ -25,6 +25,8 @@ class User(Base):
 
     # 角色权限：admin（管理员）或 member（普通成员）
     role = Column(String(20), nullable=False, default="member")
+    is_system = Column(Boolean, nullable=False, default=False)
+    system_type = Column(String(30), nullable=True)
 
     # 邀请码机制
     invite_code = Column(String(32), unique=True, nullable=True)  # 用户自己的邀请码
@@ -45,7 +47,12 @@ class User(Base):
     # 关系定义
     inviter = relationship("User", remote_side=[id], backref="invited_users")  # 邀请者
     posts = relationship("Post", back_populates="author", cascade="all, delete-orphan")  # 发布的帖子
-    comments = relationship("Comment", back_populates="author", cascade="all, delete-orphan")  # 发布的评论
+    comments = relationship(
+        "Comment",
+        back_populates="author",
+        cascade="all, delete-orphan",
+        foreign_keys="Comment.author_id",
+    )  # 发布的评论
     likes = relationship("Like", back_populates="user", cascade="all, delete-orphan")  # 点赞记录
     media_files = relationship(
         "MediaFile",

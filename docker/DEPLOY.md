@@ -53,12 +53,9 @@ vim .env
 docker-compose -f docker-compose.prod.yml up -d
 ```
 
-3. **初始化数据库**
-```bash
-docker exec -it nezha-backend alembic upgrade head
-```
+启动时会先运行 `migrate` 服务完成数据库迁移，后端和 Celery worker 会等待迁移成功后再启动。
 
-4. **创建管理员账号**
+3. **创建管理员账号**
 ```bash
 docker exec -it nezha-backend python init_admin.py
 ```
@@ -82,6 +79,7 @@ docker exec \
 
 - **postgres**: PostgreSQL 16 数据库
 - **redis**: Redis 7 缓存和任务队列
+- **migrate**: 一次性数据库迁移任务
 - **backend**: FastAPI 后端服务
 - **celery-worker**: Celery 异步任务处理
 - **frontend**: Vue 3 前端（开发环境）或 Nginx 静态服务（生产环境）
@@ -175,17 +173,17 @@ docker exec nezha-postgres pg_dump -U nezha_user nezha_family > backup.sql
 # 恢复数据库
 docker exec -i nezha-postgres psql -U nezha_user nezha_family < backup.sql
 
-# 备份媒体文件
-docker run --rm -v nezha_media_files:/data -v $(pwd):/backup alpine tar czf /backup/media-backup.tar.gz -C /data .
+# 备份媒体文件（使用 backend 容器挂载，避免 Docker Compose 项目名导致卷名不同）
+docker run --rm --volumes-from nezha-backend -v $(pwd):/backup alpine tar czf /backup/media-backup.tar.gz -C /app/media .
 
 # 恢复媒体文件
-docker run --rm -v nezha_media_files:/data -v $(pwd):/backup alpine tar xzf /backup/media-backup.tar.gz -C /data
+docker run --rm --volumes-from nezha-backend -v $(pwd):/backup alpine tar xzf /backup/media-backup.tar.gz -C /app/media
 
 # 备份管理后台生成的快照文件
-docker run --rm -v nezha_backup_files:/data -v $(pwd):/backup alpine tar czf /backup/admin-backups.tar.gz -C /data .
+docker run --rm --volumes-from nezha-backend -v $(pwd):/backup alpine tar czf /backup/admin-backups.tar.gz -C /app/backups .
 
 # 恢复管理后台生成的快照文件
-docker run --rm -v nezha_backup_files:/data -v $(pwd):/backup alpine tar xzf /backup/admin-backups.tar.gz -C /data
+docker run --rm --volumes-from nezha-backend -v $(pwd):/backup alpine tar xzf /backup/admin-backups.tar.gz -C /app/backups
 ```
 
 ## 故障排查
@@ -285,16 +283,13 @@ redis:
 git pull origin main
 
 # 2. 重新构建镜像
-docker-compose build
+docker-compose -f docker-compose.prod.yml build
 
 # 3. 停止旧服务
-docker-compose down
+docker-compose -f docker-compose.prod.yml down
 
 # 4. 启动新服务
-docker-compose up -d
-
-# 5. 运行数据库迁移（如果有）
-docker exec -it nezha-backend alembic upgrade head
+docker-compose -f docker-compose.prod.yml up -d
 ```
 
 ## 卸载

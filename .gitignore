@@ -79,6 +79,15 @@ htmlcov/
 .pytest_cache/
 .tox/
 test_login.py
+Dockerfile.test
+tests/test_e2e_playwright.py
+
+# Local reports and session notes
+*.bak
+COMPLETION_REPORT.md
+DEVELOPMENT_COMPLETE.md
+SESSION_*.md
+TEST_SUCCESS.md
 
 # Local visual review artifacts
 nezha-*.png
