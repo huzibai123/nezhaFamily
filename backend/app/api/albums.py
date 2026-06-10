@@ -61,6 +61,8 @@ async def get_albums(
             album_media.c.album_id,
             func.count(album_media.c.media_id).label("media_count")
         )
+        .join(MediaFile, MediaFile.id == album_media.c.media_id)
+        .where(MediaFile.deleted_at.is_(None))
         .group_by(album_media.c.album_id)
         .subquery()
     )
@@ -104,12 +106,16 @@ async def get_album_detail(
 
     # 显式查询相册的媒体文件（避免 lazy loading）
     media_query = (
-        select(MediaFile)
+        select(MediaFile, album_media.c.added_at)
         .join(album_media)
-        .where(album_media.c.album_id == album_id)
+        .where(
+            album_media.c.album_id == album_id,
+            MediaFile.deleted_at.is_(None),
+        )
+        .order_by(album_media.c.added_at.desc())
     )
     media_result = await db.execute(media_query)
-    media_files = media_result.scalars().all()
+    media_rows = media_result.all()
 
     return AlbumDetailResponse(
         id=album.id,
@@ -123,8 +129,9 @@ async def get_album_detail(
                 id=media.id,
                 url=signed_media_url(media.file_path) or media.file_path,
                 type=media.file_type,
+                added_at=added_at,
             )
-            for media in media_files
+            for media, added_at in media_rows
         ]
     )
 
@@ -157,7 +164,12 @@ async def update_album(
     await db.refresh(album)
 
     # 计算媒体数量（用子查询避免 lazy loading）
-    media_count_query = select(func.count()).select_from(album_media).where(album_media.c.album_id == album.id)
+    media_count_query = (
+        select(func.count())
+        .select_from(album_media)
+        .join(MediaFile, MediaFile.id == album_media.c.media_id)
+        .where(album_media.c.album_id == album.id, MediaFile.deleted_at.is_(None))
+    )
     media_count_result = await db.execute(media_count_query)
     media_count = media_count_result.scalar() or 0
 
@@ -209,7 +221,7 @@ async def add_media_to_album(
         raise HTTPException(status_code=403, detail="无权限修改此相册")
 
     media = await db.get(MediaFile, media_id)
-    if not media:
+    if not media or media.deleted_at is not None:
         raise HTTPException(status_code=404, detail="媒体文件不存在")
 
     # 显式查询关联是否存在（避免 async session 中触发 lazy loading）

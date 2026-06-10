@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Bell, CalendarDays, Home, Images, Plus, Settings, UserCircle } from 'lucide-vue-next'
+import { Bell, CalendarDays, Home, Image, Images, Plus, Settings, UserCircle } from 'lucide-vue-next'
 import { useAuth } from '@/composables/useAuth'
 import FamilySeal from '@/components/FamilySeal.vue'
 
 withDefaults(
   defineProps<{
     familyName?: string
+    logoUrl?: string
   }>(),
   {
     familyName: '哪吒家庭',
+    logoUrl: '',
   }
 )
 
@@ -17,6 +19,7 @@ const { user } = useAuth()
 
 const navItems = computed(() => [
   { label: '时间线', to: '/', icon: Home },
+  { label: '媒体库', to: '/library', icon: Image },
   { label: '相册', to: '/albums', icon: Images },
   { label: '日历', to: '/calendar', icon: CalendarDays },
   { label: '通知', to: '/notifications', icon: Bell },
@@ -35,7 +38,7 @@ const roleLabel = computed(() => {
   <aside class="desktop-sidebar h-dvh flex-col border-r border-[var(--border)] px-4 py-5">
     <div class="flex items-center gap-3 px-2">
       <div class="brand-mark">
-        <FamilySeal compact :label="familyName" />
+        <FamilySeal compact :label="familyName" :logo-url="logoUrl" />
       </div>
       <div class="min-w-0">
         <p class="truncate text-base font-semibold leading-5 text-[var(--text)]">{{ familyName }}</p>
@@ -102,10 +105,10 @@ const roleLabel = computed(() => {
 <style scoped>
 .desktop-sidebar {
   background:
-    linear-gradient(180deg, rgba(255, 248, 235, 0.92), rgba(250, 225, 196, 0.9)),
+    linear-gradient(180deg, rgba(255, 255, 252, 0.9), rgba(246, 241, 232, 0.78)),
     var(--surface-panel);
   backdrop-filter: blur(18px);
-  box-shadow: inset -1px 0 rgba(132, 74, 40, 0.06), 10px 0 34px rgba(143, 80, 40, 0.08);
+  box-shadow: inset -1px 0 rgba(49, 38, 33, 0.06), 10px 0 34px rgba(47, 39, 35, 0.07);
 }
 
 .brand-mark {
@@ -113,12 +116,12 @@ const roleLabel = computed(() => {
   height: 2.5rem;
   place-items: center;
   width: 2.5rem;
-  box-shadow: 0 8px 22px rgba(217, 74, 74, 0.1);
+  box-shadow: 0 8px 22px rgba(47, 39, 35, 0.08);
   transition: border-color 180ms ease, transform 180ms ease;
 }
 
 .desktop-sidebar:hover .brand-mark {
-  border-color: rgba(227, 107, 93, 0.36);
+  border-color: rgba(201, 67, 47, 0.3);
   transform: translateY(-1px);
 }
 
@@ -134,11 +137,11 @@ const roleLabel = computed(() => {
 }
 
 .publish-button {
-  box-shadow: 0 10px 26px rgba(217, 74, 74, 0.18);
+  box-shadow: 0 10px 26px rgba(201, 67, 47, 0.16);
 }
 
 .publish-button:hover {
-  box-shadow: 0 14px 34px rgba(217, 74, 74, 0.24);
+  box-shadow: 0 14px 34px rgba(201, 67, 47, 0.22);
   transform: translateY(-1px);
 }
 
@@ -160,14 +163,14 @@ const roleLabel = computed(() => {
 }
 
 .sidebar-link:hover {
-  background: rgba(217, 77, 48, 0.08);
-  border-color: rgba(217, 77, 48, 0.16);
+  background: rgba(201, 67, 47, 0.08);
+  border-color: rgba(201, 67, 47, 0.14);
   color: var(--text);
   transform: translateX(2px);
 }
 
 .sidebar-link-active {
-  box-shadow: inset 0 0 0 1px rgba(217, 77, 48, 0.08), 0 10px 24px rgba(143, 80, 40, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(201, 67, 47, 0.08), 0 10px 24px rgba(47, 39, 35, 0.08);
 }
 
 .sidebar-link-active::before {
@@ -176,8 +179,8 @@ const roleLabel = computed(() => {
 }
 
 .profile-card:hover {
-  border-color: rgba(217, 77, 48, 0.18);
-  box-shadow: 0 10px 28px rgba(143, 80, 40, 0.12);
+  border-color: rgba(201, 67, 47, 0.16);
+  box-shadow: 0 10px 28px rgba(47, 39, 35, 0.1);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -47,7 +47,7 @@ withDefaults(
 <style scoped>
 .right-rail {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.34), rgba(255, 238, 211, 0.12)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.34), rgba(45, 108, 104, 0.05)),
     var(--surface-panel);
   transition:
     border-color 180ms ease,
@@ -56,8 +56,8 @@ withDefaults(
 }
 
 .right-rail:hover {
-  border-color: rgba(217, 77, 48, 0.18);
-  box-shadow: 0 18px 42px rgba(143, 80, 40, 0.13);
+  border-color: rgba(201, 67, 47, 0.14);
+  box-shadow: 0 18px 42px rgba(47, 39, 35, 0.1);
   transform: translateY(-1px);
 }
 

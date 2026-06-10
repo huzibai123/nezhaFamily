@@ -1,15 +1,17 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Bell, CalendarDays, Home, Images, Plus, Settings, UserCircle } from 'lucide-vue-next'
+import { Bell, CalendarDays, Home, Image, Images, Plus, Settings, UserCircle } from 'lucide-vue-next'
 import { useAuth } from '@/composables/useAuth'
 import FamilySeal from '@/components/FamilySeal.vue'
 
 withDefaults(
   defineProps<{
     title?: string
+    logoUrl?: string
   }>(),
   {
     title: '哪吒家庭',
+    logoUrl: '',
   }
 )
 
@@ -17,6 +19,7 @@ const { user } = useAuth()
 
 const navItems = computed(() => [
   { label: '动态', to: '/', icon: Home },
+  { label: '媒体', to: '/library', icon: Image },
   { label: '相册', to: '/albums', icon: Images },
   { label: '日历', to: '/calendar', icon: CalendarDays },
   { label: '通知', to: '/notifications', icon: Bell },
@@ -30,7 +33,7 @@ const navItems = computed(() => [
     <div class="flex h-14 items-center justify-between px-4">
       <RouterLink to="/" class="brand-link flex min-w-0 items-center gap-2.5">
         <span class="grid h-8 w-8 shrink-0 place-items-center">
-          <FamilySeal compact :label="title" />
+          <FamilySeal compact :label="title" :logo-url="logoUrl" />
         </span>
         <span class="truncate text-base font-semibold text-[var(--text)]">{{ title }}</span>
       </RouterLink>
@@ -46,7 +49,7 @@ const navItems = computed(() => [
 
     <nav
       class="grid border-t border-[var(--border)]"
-      :class="user?.role === 'admin' ? 'grid-cols-6' : user ? 'grid-cols-5' : 'grid-cols-4'"
+      :style="{ gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))` }"
       aria-label="移动端主导航"
     >
       <RouterLink
@@ -66,9 +69,9 @@ const navItems = computed(() => [
 <style scoped>
 .mobile-top-nav {
   background:
-    linear-gradient(180deg, rgba(255, 248, 235, 0.94), rgba(250, 225, 196, 0.9)),
-    rgba(255, 248, 235, 0.88);
-  box-shadow: 0 10px 28px rgba(143, 80, 40, 0.1);
+    linear-gradient(180deg, rgba(255, 255, 252, 0.95), rgba(246, 241, 232, 0.9)),
+    rgba(255, 255, 252, 0.9);
+  box-shadow: 0 10px 28px rgba(47, 39, 35, 0.08);
 }
 
 .brand-link,
@@ -88,7 +91,7 @@ const navItems = computed(() => [
 }
 
 .mobile-publish {
-  box-shadow: 0 8px 22px rgba(217, 74, 74, 0.2);
+  box-shadow: 0 8px 22px rgba(201, 67, 47, 0.18);
 }
 
 .mobile-nav-link {

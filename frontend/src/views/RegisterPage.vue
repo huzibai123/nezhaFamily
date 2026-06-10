@@ -5,7 +5,7 @@
         <div class="space-y-3 enter">
           <p class="text-xs font-medium uppercase tracking-[0.18em]" style="color:var(--text-muted)">Invitation only</p>
           <div class="flex items-center gap-4">
-            <FamilySeal :label="familyName" />
+            <FamilySeal :label="familyName" :logo-url="logoUrl" />
             <h1 class="text-4xl font-semibold tracking-normal sm:text-5xl">加入家庭</h1>
           </div>
           <p class="max-w-xl text-sm leading-7 sm:text-base" style="color:var(--text-secondary)">
@@ -75,7 +75,7 @@ import FamilySeal from '@/components/FamilySeal.vue'
 const router = useRouter()
 const route = useRoute()
 const { register } = useAuth()
-const { familyName, loadFamilySettings } = useFamilySettings()
+const { familyName, logoUrl, loadFamilySettings } = useFamilySettings()
 loadFamilySettings()
 const fields = [
   { key:'inviteCode', type:'text', placeholder:'邀请码' },
@@ -149,7 +149,7 @@ async function handleRegister() {
 
 .invite-warn {
   background: var(--accent-soft);
-  border-color: rgba(217, 77, 48, 0.2);
+  border-color: rgba(201, 67, 47, 0.18);
   color: var(--accent);
 }
 </style>

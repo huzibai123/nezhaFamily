@@ -1,9 +1,9 @@
 """
 媒体文件相关的 Pydantic Schema
 """
-from typing import Optional
+from typing import Literal, Optional
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 from uuid import UUID
 
 
@@ -31,6 +31,10 @@ class MediaResponse(BaseModel):
     width: Optional[int] = Field(None, description="宽度（像素）")
     height: Optional[int] = Field(None, description="高度（像素）")
     duration: Optional[int] = Field(None, description="视频时长（秒）")
+    caption: Optional[str] = Field(None, description="媒体说明")
+    captured_at: Optional[datetime] = Field(None, description="拍摄时间")
+    deleted_at: Optional[datetime] = Field(None, description="移入回收站时间")
+    is_favorite: bool = Field(False, description="当前用户是否已收藏")
     created_at: datetime = Field(..., description="创建时间")
 
     model_config = {"from_attributes": True}
@@ -56,6 +60,10 @@ class MediaSearchItem(BaseModel):
     width: Optional[int] = Field(None, description="宽度（像素）")
     height: Optional[int] = Field(None, description="高度（像素）")
     duration: Optional[int] = Field(None, description="视频时长（秒）")
+    caption: Optional[str] = Field(None, description="媒体说明")
+    captured_at: Optional[datetime] = Field(None, description="拍摄时间")
+    deleted_at: Optional[datetime] = Field(None, description="移入回收站时间")
+    is_favorite: bool = Field(False, description="当前用户是否已收藏")
     created_at: datetime = Field(..., description="创建时间")
     uploader: MediaSearchUploader
 
@@ -71,3 +79,55 @@ class MediaSearchResponse(BaseModel):
     page: int
     page_size: int
     has_more: bool
+
+
+class MediaMonthFacet(BaseModel):
+    """媒体库月份分组统计"""
+    month: str = Field(..., description="月份，格式 YYYY-MM")
+    count: int
+
+
+class MediaLibraryResponse(MediaSearchResponse):
+    """媒体库列表响应"""
+    months: list[MediaMonthFacet] = Field(default_factory=list)
+    trash_count: int = 0
+    favorite_count: int = 0
+
+
+class MediaUpdateRequest(BaseModel):
+    """更新媒体库元数据"""
+    caption: Optional[str] = Field(None, max_length=500)
+    captured_at: Optional[datetime] = None
+
+    @field_validator("caption")
+    @classmethod
+    def normalize_caption(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        value = value.strip()
+        return value or None
+
+
+class MediaFavoriteResponse(BaseModel):
+    success: bool = True
+    is_favorite: bool
+
+
+class MediaBulkRequest(BaseModel):
+    """媒体库批量操作请求"""
+    action: Literal["favorite", "unfavorite", "add_to_album", "trash", "restore"]
+    media_ids: list[UUID] = Field(..., min_length=1, max_length=100)
+    album_id: Optional[UUID] = None
+
+    @model_validator(mode="after")
+    def validate_action_payload(self):
+        if self.action == "add_to_album" and self.album_id is None:
+            raise ValueError("批量加入相册需要 album_id")
+        return self
+
+
+class MediaBulkResponse(BaseModel):
+    action: str
+    requested: int
+    affected: int
+    skipped: int = 0

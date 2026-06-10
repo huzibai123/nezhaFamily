@@ -206,14 +206,23 @@ function mediaTitle(item: MediaSearchItem): string {
             <h2 class="mt-1 text-xl font-semibold text-[var(--text)]">家庭媒体库</h2>
             <p class="mt-1 text-sm text-[var(--text-secondary)]">{{ resultSummary }}</p>
           </div>
-          <button
-            class="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)]"
-            type="button"
-            aria-label="关闭搜索"
-            @click="closePanel"
-          >
-            <X class="h-4 w-4" :stroke-width="2" aria-hidden="true" />
-          </button>
+          <div class="flex shrink-0 items-center gap-2">
+            <RouterLink
+              to="/library"
+              class="hidden h-10 items-center rounded-lg border border-[var(--border)] px-3 text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)] hover:text-[var(--text)] sm:inline-flex"
+              @click="closePanel"
+            >
+              打开媒体库
+            </RouterLink>
+            <button
+              class="grid h-10 w-10 place-items-center rounded-lg border border-[var(--border)] text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)]"
+              type="button"
+              aria-label="关闭搜索"
+              @click="closePanel"
+            >
+              <X class="h-4 w-4" :stroke-width="2" aria-hidden="true" />
+            </button>
+          </div>
         </header>
 
         <form class="grid gap-3 border-b border-[var(--border)] p-4 sm:grid-cols-[minmax(0,1fr)_10rem_9rem] sm:p-5 xl:grid-cols-[minmax(0,1fr)_11rem_9rem_9rem_9rem_auto]" @submit.prevent="submitSearch">

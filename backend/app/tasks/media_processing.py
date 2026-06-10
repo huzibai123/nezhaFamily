@@ -2,6 +2,7 @@
 媒体处理 Celery 任务
 处理图片压缩、缩略图生成等耗时操作
 """
+
 import logging
 from pathlib import Path
 from uuid import UUID
@@ -11,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 
 from app.core.config import settings
 from app.tasks import celery_app
-from app.core.media_utils import MEDIA_ROOT, MEDIA_URL_PREFIX, media_path_from_url
+from app.core.media_utils import MEDIA_ROOT, media_path_from_url
 
 logger = logging.getLogger(__name__)
 
@@ -134,19 +135,56 @@ def compress_image(self, media_id: str) -> dict:
             logger.warning(f"压缩任务：文件 {file_path} 不存在")
             return {"status": "error", "reason": "file_not_found"}
 
-        # 尝试打开图片
+        # 尝试打开图片。主文件路径必须保持稳定，避免上传响应中的 raw_url 失效。
         try:
             with Image.open(file_path) as img:
                 original_size = img.size
+                image_format = (img.format or "").upper()
+                mime_type = Image.MIME.get(
+                    image_format, media.mime_type or "image/jpeg"
+                )
 
-                # 如果宽度超过 1920px，等比缩放
+                preserve_original = image_format in {"GIF", "PNG", "WEBP"}
+                next_size = original_size
+
+                # 透明图、动图和 WebP 保留原文件，避免破坏透明度/动画。
+                if preserve_original:
+                    db_loop = asyncio.new_event_loop()
+                    try:
+                        asyncio.set_event_loop(db_loop)
+                        db_loop.run_until_complete(
+                            update_media_after_compression(
+                                media_id,
+                                file_path=media.file_path,
+                                file_size=file_path.stat().st_size,
+                                mime_type=mime_type,
+                                width=img.width,
+                                height=img.height,
+                            )
+                        )
+                    finally:
+                        db_loop.close()
+
+                    generate_thumbnail.delay(media_id)
+                    return {
+                        "status": "success",
+                        "original_size": original_size,
+                        "file_path": media.file_path,
+                        "file_size": file_path.stat().st_size,
+                        "mime_type": mime_type,
+                        "size": original_size,
+                        "compressed": False,
+                        "preserved": True,
+                    }
+
+                # JPEG 图片可在原路径上等比缩放/优化，但不改 URL。
                 max_width = 1920
                 if img.width > max_width:
                     ratio = max_width / img.width
-                    new_size = (max_width, int(img.height * ratio))
-                    img = img.resize(new_size, Image.Resampling.LANCZOS)
+                    next_size = (max_width, int(img.height * ratio))
+                    img = img.resize(next_size, Image.Resampling.LANCZOS)
                     logger.info(
-                        f"压缩任务：{media_id} 从 {original_size} 缩放到 {new_size}"
+                        f"压缩任务：{media_id} 从 {original_size} 缩放到 {next_size}"
                     )
 
                 # 转换 RGBA 为 RGB（JPEG 不支持透明度）
@@ -154,24 +192,24 @@ def compress_image(self, media_id: str) -> dict:
                     rgb_img = Image.new("RGB", img.size, (255, 255, 255))
                     rgb_img.paste(img, mask=img.split()[3])
                     img = rgb_img
+                elif img.mode not in {"RGB", "L"}:
+                    img = img.convert("RGB")
 
-                derived_name = f"optimized_{file_path.stem}.jpg"
-                derived_path = file_path.with_name(derived_name)
-                img.save(derived_path, format="JPEG", quality=85, optimize=True)
-
-                compressed_size = derived_path.stat().st_size
-                compressed_relative_path = (
-                    f"{MEDIA_URL_PREFIX}{derived_path.relative_to(MEDIA_ROOT).as_posix()}"
+                temp_path = file_path.with_name(
+                    f".{file_path.stem}.optimized{file_path.suffix}"
                 )
+                img.save(temp_path, format="JPEG", quality=85, optimize=True)
+                temp_path.replace(file_path)
 
-                # 更新 DB 后再移除原文件，避免短窗口内 API 指向不存在的路径。
+                compressed_size = file_path.stat().st_size
+
                 db_loop = asyncio.new_event_loop()
                 try:
                     asyncio.set_event_loop(db_loop)
                     db_loop.run_until_complete(
                         update_media_after_compression(
                             media_id,
-                            file_path=compressed_relative_path,
+                            file_path=media.file_path,
                             file_size=compressed_size,
                             mime_type="image/jpeg",
                             width=img.width,
@@ -181,20 +219,17 @@ def compress_image(self, media_id: str) -> dict:
                 finally:
                     db_loop.close()
 
-                if derived_path != file_path:
-                    file_path.unlink(missing_ok=True)
-
                 generate_thumbnail.delay(media_id)
 
-                logger.info(f"压缩任务：{media_id} 已更新主文件 {derived_path}")
+                logger.info(f"压缩任务：{media_id} 已原地更新主文件 {file_path}")
                 return {
                     "status": "success",
                     "original_size": original_size,
-                    "file_path": compressed_relative_path,
+                    "file_path": media.file_path,
                     "file_size": compressed_size,
                     "mime_type": "image/jpeg",
                     "size": (img.width, img.height),
-                    "compressed": img.width < original_size[0],
+                    "compressed": next_size != original_size,
                 }
 
         except Exception as e:
@@ -290,13 +325,11 @@ def generate_thumbnail(self, media_id: str) -> dict:
                 finally:
                     db_loop.close()
 
-                logger.info(
-                    f"缩略图任务：{media_id} 生成完成，尺寸 {thumbnail_size}"
-                )
+                logger.info(f"缩略图任务：{media_id} 生成完成，尺寸 {thumbnail_size}")
                 return {
                     "status": "success",
                     "thumbnail_path": thumbnail_relative_path,
-                    "size": thumbnail_size
+                    "size": thumbnail_size,
                 }
 
         except Exception as e:

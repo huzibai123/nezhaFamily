@@ -47,7 +47,12 @@ class User(Base):
     posts = relationship("Post", back_populates="author", cascade="all, delete-orphan")  # 发布的帖子
     comments = relationship("Comment", back_populates="author", cascade="all, delete-orphan")  # 发布的评论
     likes = relationship("Like", back_populates="user", cascade="all, delete-orphan")  # 点赞记录
-    media_files = relationship("MediaFile", back_populates="uploader", cascade="all, delete-orphan")  # 上传的媒体
+    media_files = relationship(
+        "MediaFile",
+        back_populates="uploader",
+        cascade="all, delete-orphan",
+        foreign_keys="MediaFile.uploader_id",
+    )  # 上传的媒体
     albums = relationship("Album", back_populates="creator", cascade="all, delete-orphan")  # 创建的相册
     events = relationship("Event", back_populates="creator", cascade="all, delete-orphan")  # 创建的事件
 

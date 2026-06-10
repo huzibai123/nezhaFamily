@@ -1,6 +1,37 @@
 import api from './index'
+import type { MediaUploadResponse } from './media'
 
 export type AdminRole = 'admin' | 'member'
+export type ThemeAssetKind = 'background' | 'logo' | 'cursor' | 'ornament'
+export type ThemeOrnamentPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right'
+
+export interface ThemeBackgroundAsset {
+  id: string
+  url: string
+  label?: string | null
+  enabled: boolean
+}
+
+export interface ThemeCursorAsset {
+  url?: string | null
+  enabled: boolean
+  size: number
+}
+
+export interface ThemeOrnamentAsset {
+  id: string
+  url: string
+  position: ThemeOrnamentPosition
+  enabled: boolean
+  size: number
+  opacity: number
+}
+
+export interface FamilyThemeAssets {
+  backgrounds: ThemeBackgroundAsset[]
+  cursor?: ThemeCursorAsset | null
+  ornaments: ThemeOrnamentAsset[]
+}
 
 export interface FamilySettings {
   family_name: string
@@ -8,6 +39,8 @@ export interface FamilySettings {
   theme_color?: string | null
   accent_color?: string | null
   background_image_url?: string | null
+  logo_url?: string | null
+  theme_assets?: FamilyThemeAssets | null
   updated_by?: string | null
   created_at?: string
   updated_at?: string
@@ -171,4 +204,16 @@ export function getFamilySettings(): Promise<FamilySettings> {
 
 export function updateFamilySettings(data: Partial<FamilySettings>): Promise<FamilySettings> {
   return api.put('/admin/family-settings', data)
+}
+
+export function uploadThemeAsset(
+  kind: ThemeAssetKind,
+  files: File[]
+): Promise<MediaUploadResponse> {
+  const formData = new FormData()
+  files.forEach(file => formData.append('files', file))
+  return api.post('/admin/theme-assets/upload', formData, {
+    params: { kind },
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
 }

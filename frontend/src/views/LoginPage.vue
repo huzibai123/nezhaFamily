@@ -5,7 +5,7 @@
         <div class="space-y-3 enter">
           <p class="text-xs font-medium uppercase tracking-[0.18em]" style="color:var(--text-muted)">Private family hub</p>
           <div class="flex items-center gap-4">
-            <FamilySeal :label="familyName" />
+            <FamilySeal :label="familyName" :logo-url="logoUrl" />
             <h1 class="text-4xl font-semibold tracking-normal sm:text-5xl" style="color:var(--text)">{{ familyName }}</h1>
           </div>
           <p class="max-w-xl text-sm leading-7 sm:text-base" style="color:var(--text-secondary)">
@@ -64,7 +64,7 @@ import { useFamilySettings } from '@/composables/useFamilySettings'
 import FamilySeal from '@/components/FamilySeal.vue'
 
 const router = useRouter(); const route = useRoute(); const { login } = useAuth()
-const { familyName, tagline, loadFamilySettings } = useFamilySettings()
+const { familyName, tagline, logoUrl, loadFamilySettings } = useFamilySettings()
 loadFamilySettings()
 const form = reactive({ username: '', password: '' })
 const loading = ref(false); const errorMessage = ref('')

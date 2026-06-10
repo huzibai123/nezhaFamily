@@ -14,6 +14,7 @@ export interface AlbumMediaItem {
   id: string
   url: string
   type: string
+  added_at?: string | null
 }
 
 export interface AlbumDetail {
@@ -40,6 +41,17 @@ export function createAlbum(data: {
   cover_image_url?: string
 }): Promise<Album> {
   return api.post('/albums', data)
+}
+
+export function updateAlbum(
+  id: string,
+  data: {
+    name?: string
+    description?: string | null
+    cover_image_url?: string | null
+  }
+): Promise<Album> {
+  return api.put(`/albums/${id}`, data)
 }
 
 export function addMediaToAlbum(albumId: string, mediaId: string): Promise<void> {

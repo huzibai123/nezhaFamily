@@ -1,6 +1,7 @@
 """
 媒体路径与私有访问签名工具。
 """
+
 import base64
 import hashlib
 import hmac
@@ -86,22 +87,48 @@ def signed_media_url(url: Optional[str]) -> Optional[str]:
     return f"{raw_url}?token={token}"
 
 
+MEDIA_URL_KEYS = {
+    "url",
+    "thumbnail",
+    "thumbnail_url",
+    "background_image_url",
+    "logo_url",
+}
+
+
+def transform_media_urls(value: Any, transform) -> Any:
+    """递归转换结构化数据中的媒体 URL 字段。"""
+    if isinstance(value, list):
+        return [transform_media_urls(item, transform) for item in value]
+    if isinstance(value, dict):
+        transformed: dict[str, Any] = {}
+        for key, item in value.items():
+            if key in MEDIA_URL_KEYS and isinstance(item, str):
+                transformed[key] = transform(item)
+            else:
+                transformed[key] = transform_media_urls(item, transform)
+        return transformed
+    return value
+
+
+def raw_media_value_urls(value: Any) -> Any:
+    """递归清理结构化数据中的临时媒体签名。"""
+    return transform_media_urls(value, raw_media_url)
+
+
+def signed_media_value_urls(value: Any) -> Any:
+    """递归签名结构化数据中的本地媒体 URL。"""
+    return transform_media_urls(value, signed_media_url)
+
+
 def normalize_media_item_for_storage(item: dict[str, Any]) -> dict[str, Any]:
     """清理媒体项中的临时签名，避免过期 URL 写入数据库。"""
-    normalized = dict(item)
-    for key in ("url", "thumbnail", "thumbnail_url"):
-        if normalized.get(key):
-            normalized[key] = raw_media_url(normalized[key])
-    return normalized
+    return raw_media_value_urls(item)
 
 
 def sign_media_item_for_response(item: dict[str, Any]) -> dict[str, Any]:
     """给媒体项中的可访问 URL 添加短期签名。"""
-    signed = dict(item)
-    for key in ("url", "thumbnail", "thumbnail_url"):
-        if signed.get(key):
-            signed[key] = signed_media_url(signed[key])
-    return signed
+    return signed_media_value_urls(item)
 
 
 def media_storage_path(file_path: str) -> Path:
@@ -119,5 +146,5 @@ def media_path_from_url(url_or_path: str) -> str:
     """把 /media/foo.jpg 或 foo.jpg 归一为相对磁盘路径。"""
     path = strip_media_query(url_or_path) or url_or_path
     if path.startswith(MEDIA_URL_PREFIX):
-        return path[len(MEDIA_URL_PREFIX):]
+        return path[len(MEDIA_URL_PREFIX) :]
     return path.lstrip("/")

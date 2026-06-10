@@ -1,8 +1,9 @@
 """
 管理员与家庭设置相关的 Pydantic Schema
 """
+
 from datetime import date, datetime
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -10,6 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 
 class AdminMemberSummary(BaseModel):
     """管理员概览中的成员摘要"""
+
     id: UUID
     username: str
     avatar_url: Optional[str] = None
@@ -19,6 +21,7 @@ class AdminMemberSummary(BaseModel):
 
 class AdminPostingMemberSummary(BaseModel):
     """最近发帖成员摘要"""
+
     id: UUID
     username: str
     avatar_url: Optional[str] = None
@@ -29,6 +32,7 @@ class AdminPostingMemberSummary(BaseModel):
 
 class AdminRecentCommentSummary(BaseModel):
     """最近评论摘要"""
+
     id: UUID
     post_id: UUID
     author_id: UUID
@@ -39,6 +43,7 @@ class AdminRecentCommentSummary(BaseModel):
 
 class AdminRecentMediaSummary(BaseModel):
     """最近媒体与上传风险摘要"""
+
     id: UUID
     uploader_id: UUID
     uploader_username: str
@@ -52,6 +57,7 @@ class AdminRecentMediaSummary(BaseModel):
 
 class AdminStorageStatus(BaseModel):
     """媒体目录与磁盘状态"""
+
     media_root: str
     backup_root: str
     media_file_count: int
@@ -66,6 +72,7 @@ class AdminStorageStatus(BaseModel):
 
 class AdminBackupItem(BaseModel):
     """一次备份快照摘要"""
+
     backup_id: str
     status: str
     created_at: datetime
@@ -79,6 +86,7 @@ class AdminBackupItem(BaseModel):
 
 class AdminBackupStatus(BaseModel):
     """备份目录状态"""
+
     backup_root: str
     latest: Optional[AdminBackupItem] = None
     recent: list[AdminBackupItem] = []
@@ -86,6 +94,7 @@ class AdminBackupStatus(BaseModel):
 
 class AdminBackupCheck(BaseModel):
     """备份完整性校验项"""
+
     label: str
     ok: bool
     detail: str
@@ -93,6 +102,7 @@ class AdminBackupCheck(BaseModel):
 
 class AdminBackupVerification(BaseModel):
     """备份完整性校验结果"""
+
     backup_id: str
     status: str
     verified_at: datetime
@@ -103,6 +113,7 @@ class AdminBackupVerification(BaseModel):
 
 class AdminOverviewResponse(BaseModel):
     """管理员概览响应"""
+
     user_count: int
     post_count: int
     comment_count: int
@@ -120,6 +131,7 @@ class AdminOverviewResponse(BaseModel):
 
 class AdminUserResponse(BaseModel):
     """管理员成员列表响应项"""
+
     id: UUID
     username: str
     email: str
@@ -139,6 +151,7 @@ class AdminUserResponse(BaseModel):
 
 class AdminUserUpdate(BaseModel):
     """管理员更新成员资料请求"""
+
     role: Optional[str] = Field(None, max_length=20)
     role_in_family: Optional[str] = Field(None, max_length=50)
     bio: Optional[str] = Field(None, max_length=500)
@@ -153,17 +166,92 @@ class AdminUserUpdate(BaseModel):
 
 class AdminInviteCodeResponse(BaseModel):
     """重新生成邀请码响应"""
+
     user_id: UUID
     invite_code: str
 
 
+THEME_ASSET_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
+
+
+def validate_local_media_asset_url(value: Optional[str]) -> Optional[str]:
+    """主题视觉资产只能引用本地私有媒体路径。"""
+    if value in (None, ""):
+        return value
+    if not value.startswith("/media/"):
+        raise ValueError("主题资产只能使用本地 /media/ 路径")
+    path = value.split("?", 1)[0].lower()
+    if not any(path.endswith(extension) for extension in THEME_ASSET_EXTENSIONS):
+        raise ValueError("主题资产仅支持 jpg、jpeg、png、gif、webp")
+    return value
+
+
+class ThemeBackgroundAsset(BaseModel):
+    """家庭背景图资产"""
+
+    id: str = Field(..., min_length=1, max_length=80)
+    url: str = Field(..., max_length=500)
+    label: Optional[str] = Field(None, max_length=80)
+    enabled: bool = True
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value: str) -> str:
+        return validate_local_media_asset_url(value) or value
+
+
+class ThemeCursorAsset(BaseModel):
+    """鼠标跟随装饰资产"""
+
+    url: Optional[str] = Field(None, max_length=500)
+    enabled: bool = False
+    size: int = Field(76, ge=24, le=160)
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value: Optional[str]) -> Optional[str]:
+        return validate_local_media_asset_url(value)
+
+
+class ThemeOrnamentAsset(BaseModel):
+    """页面角落挂饰资产"""
+
+    id: str = Field(..., min_length=1, max_length=80)
+    url: str = Field(..., max_length=500)
+    position: Literal["top-left", "top-right", "bottom-left", "bottom-right"]
+    enabled: bool = True
+    size: int = Field(96, ge=24, le=220)
+    opacity: float = Field(0.72, ge=0.1, le=1.0)
+
+    @field_validator("url")
+    @classmethod
+    def validate_url(cls, value: str) -> str:
+        return validate_local_media_asset_url(value) or value
+
+
+class FamilyThemeAssets(BaseModel):
+    """全局家庭主题资产集合"""
+
+    backgrounds: list[ThemeBackgroundAsset] = Field(default_factory=list, max_length=12)
+    cursor: Optional[ThemeCursorAsset] = None
+    ornaments: list[ThemeOrnamentAsset] = Field(default_factory=list, max_length=8)
+
+
 class FamilySettingsBase(BaseModel):
     """家庭设置基础字段"""
+
     family_name: str = Field(default="哪吒家庭", min_length=1, max_length=100)
     tagline: Optional[str] = Field(None, max_length=200)
     theme_color: Optional[str] = Field(None, max_length=20)
     accent_color: Optional[str] = Field(None, max_length=20)
     background_image_url: Optional[str] = Field(None, max_length=500)
+    logo_url: Optional[str] = Field(None, max_length=500)
+    theme_assets: FamilyThemeAssets = Field(default_factory=FamilyThemeAssets)
+
+    @field_validator("background_image_url", "logo_url")
+    @classmethod
+    def validate_asset_url(cls, value: Optional[str]) -> Optional[str]:
+        return validate_local_media_asset_url(value)
 
 
 class FamilySettingsUpdate(FamilySettingsBase):
@@ -172,6 +260,7 @@ class FamilySettingsUpdate(FamilySettingsBase):
 
 class FamilySettingsResponse(FamilySettingsBase):
     """家庭设置响应"""
+
     updated_by: Optional[UUID] = None
     created_at: datetime
     updated_at: datetime

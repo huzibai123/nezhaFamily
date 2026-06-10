@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, useSlots } from 'vue'
 import DesktopSidebar from '@/components/DesktopSidebar.vue'
+import FamilyDecorLayer from '@/components/FamilyDecorLayer.vue'
 import MediaSearchPanel from '@/components/MediaSearchPanel.vue'
 import MobileTopNav from '@/components/MobileTopNav.vue'
 import { useFamilySettings } from '@/composables/useFamilySettings'
@@ -20,19 +21,17 @@ const props = withDefaults(
 
 const slots = useSlots()
 const hasRightRail = computed(() => Boolean(slots.right))
-const { familyName: configuredFamilyName, backgroundImage } = useFamilySettings()
+const { familyName: configuredFamilyName, logoUrl } = useFamilySettings()
 const displayFamilyName = computed(() => props.familyName || configuredFamilyName.value)
-const shellStyle = computed(() => ({
-  '--family-background-image': backgroundImage.value ? `url("${backgroundImage.value}")` : 'none',
-}))
 </script>
 
 <template>
-  <div class="family-shell min-h-dvh text-[var(--text)]" :style="shellStyle">
-    <MobileTopNav class="lg:hidden" :title="displayFamilyName" />
+  <div class="family-shell min-h-dvh text-[var(--text)]">
+    <FamilyDecorLayer class="family-shell-decor" />
+    <MobileTopNav class="lg:hidden" :title="displayFamilyName" :logo-url="logoUrl" />
 
     <div class="mx-auto grid min-h-dvh w-full lg:grid-cols-[16rem_minmax(0,1fr)] xl:grid-cols-[17rem_minmax(0,1fr)]">
-      <DesktopSidebar class="hidden lg:flex" :family-name="displayFamilyName" />
+      <DesktopSidebar class="hidden lg:flex" :family-name="displayFamilyName" :logo-url="logoUrl" />
 
       <div class="min-w-0">
         <main class="shell-main mx-auto w-full px-4 pb-14 pt-5 sm:px-6 lg:px-8 lg:py-8 xl:px-10">
@@ -84,19 +83,13 @@ const shellStyle = computed(() => ({
 
 <style scoped>
 .family-shell {
-  --family-background-image: none;
   isolation: isolate;
   overflow: hidden;
   position: relative;
   background:
-    linear-gradient(180deg, rgba(255, 248, 235, 0.78), rgba(255, 238, 211, 0.54)),
-    var(--family-background-image),
-    linear-gradient(180deg, rgba(255, 248, 235, 0.78) 0%, rgba(255, 238, 211, 0.46) 34%, rgba(242, 189, 119, 0.28) 100%),
-    linear-gradient(100deg, rgba(217, 77, 48, 0.08), rgba(255, 255, 255, 0) 42%, rgba(92, 121, 84, 0.08)),
+    linear-gradient(180deg, rgba(246, 241, 232, 0.92), rgba(232, 224, 210, 0.78)),
+    linear-gradient(100deg, rgba(201, 67, 47, 0.08), rgba(255, 255, 255, 0) 42%, rgba(45, 108, 104, 0.08)),
     transparent;
-  background-attachment: fixed;
-  background-position: center;
-  background-size: auto, cover, auto, auto;
 }
 
 .family-shell::before,
@@ -107,7 +100,7 @@ const shellStyle = computed(() => ({
   z-index: 0;
 }
 
-.family-shell > * {
+.family-shell > :not(.family-shell-decor) {
   position: relative;
   z-index: 1;
 }
@@ -115,11 +108,11 @@ const shellStyle = computed(() => ({
 .family-shell::before {
   animation: ring-drift 16s ease-in-out infinite;
   background:
-    conic-gradient(from 16deg, rgba(217, 77, 48, 0.2), rgba(212, 137, 37, 0.26), rgba(92, 121, 84, 0.16), rgba(217, 77, 48, 0.2));
-  border: 1px solid rgba(132, 74, 40, 0.14);
+    conic-gradient(from 16deg, rgba(201, 67, 47, 0.14), rgba(45, 108, 104, 0.14), rgba(66, 81, 132, 0.1), rgba(201, 67, 47, 0.14));
+  border: 1px solid rgba(49, 38, 33, 0.1);
   border-radius: 999px;
   height: min(26vw, 16rem);
-  opacity: 0.42;
+  opacity: 0.26;
   right: clamp(1rem, 6vw, 5rem);
   top: 5.5rem;
   width: min(26vw, 16rem);
@@ -128,13 +121,13 @@ const shellStyle = computed(() => ({
 .family-shell::after {
   animation: ribbon-breathe 13s ease-in-out infinite alternate;
   background:
-    linear-gradient(92deg, rgba(217, 77, 48, 0), rgba(217, 77, 48, 0.22), rgba(212, 137, 37, 0.18), rgba(217, 77, 48, 0));
+    linear-gradient(92deg, rgba(201, 67, 47, 0), rgba(201, 67, 47, 0.12), rgba(45, 108, 104, 0.1), rgba(201, 67, 47, 0));
   border-radius: 999px;
   bottom: 12vh;
   filter: blur(0.5px);
   height: 4rem;
   left: clamp(-5rem, -3vw, -1rem);
-  opacity: 0.54;
+  opacity: 0.34;
   transform: rotate(-9deg);
   width: min(34rem, 58vw);
 }

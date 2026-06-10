@@ -1,22 +1,32 @@
 <script setup lang="ts">
+import { mediaUrl } from '@/utils/media'
+
 withDefaults(
   defineProps<{
     label?: string
     compact?: boolean
+    logoUrl?: string
   }>(),
   {
     label: '哪吒家庭',
     compact: false,
+    logoUrl: '',
   }
 )
 </script>
 
 <template>
   <div class="family-seal" :class="{ 'family-seal-compact': compact }" aria-hidden="true">
-    <span class="seal-ring"></span>
-    <span class="seal-flame seal-flame-a"></span>
-    <span class="seal-flame seal-flame-b"></span>
-    <span class="seal-text">{{ label.slice(0, 4) }}</span>
+    <template v-if="logoUrl">
+      <span class="seal-logo-ring"></span>
+      <img class="seal-logo" :src="mediaUrl(logoUrl)" :alt="label" />
+    </template>
+    <template v-else>
+      <span class="seal-ring"></span>
+      <span class="seal-flame seal-flame-a"></span>
+      <span class="seal-flame seal-flame-b"></span>
+      <span class="seal-text">{{ label.slice(0, 4) }}</span>
+    </template>
   </div>
 </template>
 
@@ -37,17 +47,37 @@ withDefaults(
 .seal-ring {
   animation: seal-ring-turn 12s linear infinite;
   background:
-    conic-gradient(from 18deg, rgba(217, 77, 48, 0.82), rgba(212, 137, 37, 0.92), rgba(92, 121, 84, 0.52), rgba(217, 77, 48, 0.82));
+    conic-gradient(from 18deg, rgba(201, 67, 47, 0.78), rgba(45, 108, 104, 0.62), rgba(66, 81, 132, 0.44), rgba(201, 67, 47, 0.78));
   border-radius: 999px;
   inset: 0;
   mask: radial-gradient(circle, transparent 0 54%, #000 55% 63%, transparent 64%);
   position: absolute;
 }
 
+.seal-logo-ring {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.72), rgba(246, 241, 232, 0.34)),
+    conic-gradient(from 18deg, rgba(201, 67, 47, 0.72), rgba(45, 108, 104, 0.46), rgba(66, 81, 132, 0.36), rgba(201, 67, 47, 0.72));
+  border: 1px solid rgba(63, 45, 36, 0.14);
+  border-radius: 18px;
+  box-shadow: 0 18px 38px rgba(63, 45, 36, 0.14);
+  inset: 0.35rem;
+  position: absolute;
+}
+
+.seal-logo {
+  aspect-ratio: 1;
+  border-radius: 14px;
+  height: calc(100% - 1rem);
+  object-fit: cover;
+  position: relative;
+  width: calc(100% - 1rem);
+}
+
 .seal-ring::before,
 .seal-ring::after {
-  background: rgba(255, 248, 235, 0.74);
-  border: 1px solid rgba(132, 74, 40, 0.16);
+  background: rgba(255, 255, 252, 0.74);
+  border: 1px solid rgba(49, 38, 33, 0.14);
   border-radius: 999px;
   content: '';
   height: 0.45rem;
@@ -67,9 +97,9 @@ withDefaults(
 .seal-flame {
   background:
     radial-gradient(circle at 45% 64%, rgba(255, 243, 197, 0.9) 0 12%, transparent 13%),
-    conic-gradient(from 24deg, rgba(217, 77, 48, 0), rgba(217, 77, 48, 0.72), rgba(212, 137, 37, 0.76), rgba(217, 77, 48, 0));
+    conic-gradient(from 24deg, rgba(201, 67, 47, 0), rgba(201, 67, 47, 0.66), rgba(45, 108, 104, 0.42), rgba(201, 67, 47, 0));
   border-radius: 68% 32% 62% 38%;
-  filter: drop-shadow(0 6px 12px rgba(217, 77, 48, 0.16));
+  filter: drop-shadow(0 6px 12px rgba(201, 67, 47, 0.14));
   height: 1.4rem;
   position: absolute;
   width: 2.1rem;
@@ -92,10 +122,10 @@ withDefaults(
 .seal-text {
   align-items: center;
   background:
-    linear-gradient(180deg, rgba(255, 248, 235, 0.86), rgba(255, 226, 194, 0.78));
-  border: 1px solid rgba(132, 74, 40, 0.2);
+    linear-gradient(180deg, rgba(255, 255, 252, 0.88), rgba(238, 231, 219, 0.8));
+  border: 1px solid rgba(49, 38, 33, 0.16);
   border-radius: 12px;
-  box-shadow: 0 14px 32px rgba(143, 80, 40, 0.12);
+  box-shadow: 0 14px 32px rgba(47, 39, 35, 0.1);
   color: var(--accent);
   display: inline-flex;
   font-size: 0.86rem;
@@ -123,6 +153,17 @@ withDefaults(
 .family-seal-compact .seal-flame {
   height: 0.72rem;
   width: 1rem;
+}
+
+.family-seal-compact .seal-logo-ring {
+  border-radius: 12px;
+  inset: 0.22rem;
+}
+
+.family-seal-compact .seal-logo {
+  border-radius: 10px;
+  height: calc(100% - 0.64rem);
+  width: calc(100% - 0.64rem);
 }
 
 @keyframes seal-ring-turn {

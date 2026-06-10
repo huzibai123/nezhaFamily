@@ -2,6 +2,7 @@
 Pytest 配置文件
 提供测试所需的 fixtures（测试数据库、测试客户端、测试用户等）
 """
+
 import os
 import pytest
 import pytest_asyncio
@@ -21,7 +22,9 @@ import_all_models()
 
 # 测试数据库 URL（使用独立的测试数据库，避免污染开发数据）
 # 根据环境自动选择主机名（容器内用 postgres，本地用 localhost）
-DB_HOST = os.getenv("TEST_DB_HOST", "postgres" if os.path.exists("/.dockerenv") else "localhost")
+DB_HOST = os.getenv(
+    "TEST_DB_HOST", "postgres" if os.path.exists("/.dockerenv") else "localhost"
+)
 TEST_DATABASE_URL = f"postgresql+asyncpg://nezha_user:nezha_dev_password@{DB_HOST}:5432/nezha_family_test"
 
 
@@ -39,7 +42,6 @@ def _task_delay_stub(*args, **kwargs):
 def disable_celery_tasks(monkeypatch):
     """Keep API tests focused on request behavior instead of Redis/Celery availability."""
     monkeypatch.setattr(media_api.compress_image, "delay", _task_delay_stub)
-    monkeypatch.setattr(media_api.generate_thumbnail, "delay", _task_delay_stub)
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -88,14 +90,14 @@ async def client(db: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     测试客户端 fixture
     提供 httpx.AsyncClient，自动注入测试数据库会话
     """
+
     async def override_get_db():
         yield db
 
     app.dependency_overrides[get_db] = override_get_db
 
     async with AsyncClient(
-        transport=ASGITransport(app=app),
-        base_url="http://test"
+        transport=ASGITransport(app=app), base_url="http://test"
     ) as client:
         yield client
 

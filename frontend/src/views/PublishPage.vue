@@ -71,6 +71,26 @@
               >
                 ×
               </button>
+              <div class="absolute bottom-1.5 left-1.5 flex gap-1">
+                <button
+                  @click="moveMedia(index, -1)"
+                  :disabled="index === 0"
+                  class="preview-sort-button"
+                  type="button"
+                  aria-label="向前移动"
+                >
+                  ‹
+                </button>
+                <button
+                  @click="moveMedia(index, 1)"
+                  :disabled="index === previews.length - 1"
+                  class="preview-sort-button"
+                  type="button"
+                  aria-label="向后移动"
+                >
+                  ›
+                </button>
+              </div>
             </div>
           </div>
 
@@ -83,6 +103,26 @@
             添加图片或视频
           </button>
           <input ref="fileInput" type="file" accept="image/*,video/*" multiple class="hidden" @change="onFilesSelected" />
+
+          <div class="mt-4 rounded-lg border border-[var(--border)] bg-[var(--surface-card)] p-3">
+            <label class="mb-2 block text-xs font-medium uppercase tracking-[0.12em] text-[var(--text-muted)]" for="target-album">
+              目标相册
+            </label>
+            <select
+              id="target-album"
+              v-model="selectedAlbumId"
+              class="editor-input h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text)] outline-none"
+              :disabled="albumsLoading || !albums.length"
+            >
+              <option value="">发布后不加入相册</option>
+              <option v-for="album in albums" :key="album.id" :value="album.id">
+                {{ album.name }}
+              </option>
+            </select>
+            <p class="mt-2 text-xs leading-5 text-[var(--text-muted)]">
+              {{ albums.length ? '本次上传的媒体会按当前排序加入相册。' : '还没有可选相册，可以稍后在媒体库整理。' }}
+            </p>
+          </div>
         </section>
 
         <RightRail
@@ -94,16 +134,20 @@
         <p v-if="errorMessage" class="rounded-lg border border-[color:rgb(227_107_93_/_0.24)] bg-[var(--accent-soft)] p-3 text-xs text-[var(--accent)]">
           {{ errorMessage }}
         </p>
+        <p v-else-if="statusMessage" class="rounded-lg border border-[color:rgb(45_108_104_/_0.22)] bg-[color:rgb(45_108_104_/_0.08)] p-3 text-xs text-[color:rgb(45_108_104)]">
+          {{ statusMessage }}
+        </p>
       </aside>
     </div>
   </AppShell>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { createPost, type MediaItem } from '@/api/posts'
-import { uploadMedia } from '@/api/media'
+import { getAlbums, type Album } from '@/api/albums'
+import { bulkMediaAction, uploadMedia } from '@/api/media'
 import AppShell from '@/components/AppShell.vue'
 import RightRail from '@/components/RightRail.vue'
 
@@ -111,10 +155,15 @@ const router = useRouter()
 const content = ref('')
 const publishing = ref(false)
 const errorMessage = ref('')
+const statusMessage = ref('')
 const fileInput = ref<HTMLInputElement>()
 const mediaFiles = ref<File[]>([])
 const previews = ref<string[]>([])
 const uploadedUrls = ref<MediaItem[]>([])
+const uploadedMediaIds = ref<string[]>([])
+const albums = ref<Album[]>([])
+const selectedAlbumId = ref('')
+const albumsLoading = ref(false)
 
 const canPublish = computed(() => content.value.trim().length > 0 || mediaFiles.value.length > 0)
 const publishChecklist = computed(() => [
@@ -128,7 +177,18 @@ const publishChecklist = computed(() => [
     body: '单次最多 9 个，图片和视频可以混合。',
     meta: '媒体',
   },
+  {
+    title: selectedAlbumId.value
+      ? `加入「${albums.value.find((album) => album.id === selectedAlbumId.value)?.name || '相册'}」`
+      : '不指定相册',
+    body: '发布后仍可在媒体库批量整理。',
+    meta: '相册',
+  },
 ])
+
+onMounted(() => {
+  loadAlbums()
+})
 
 function triggerFileInput() {
   fileInput.value?.click()
@@ -153,6 +213,22 @@ function removeMedia(index: number) {
   mediaFiles.value.splice(index, 1)
   previews.value.splice(index, 1)
   uploadedUrls.value.splice(index, 1)
+  uploadedMediaIds.value.splice(index, 1)
+}
+
+function moveMedia(index: number, direction: -1 | 1) {
+  const targetIndex = index + direction
+  if (targetIndex < 0 || targetIndex >= mediaFiles.value.length) return
+  swap(mediaFiles.value, index, targetIndex)
+  swap(previews.value, index, targetIndex)
+  swap(uploadedUrls.value, index, targetIndex)
+  swap(uploadedMediaIds.value, index, targetIndex)
+}
+
+function swap<T>(items: T[], from: number, to: number) {
+  const item = items[from]
+  items[from] = items[to]
+  items[to] = item
 }
 
 function revokePreview(index: number) {
@@ -169,12 +245,31 @@ function resetMediaState() {
   revokeAllPreviews()
   mediaFiles.value = []
   uploadedUrls.value = []
+  uploadedMediaIds.value = []
+}
+
+async function loadAlbums() {
+  if (albumsLoading.value) return
+  albumsLoading.value = true
+  try {
+    const response = await getAlbums()
+    albums.value = response.albums
+    if (!albums.value.some((album) => album.id === selectedAlbumId.value)) {
+      selectedAlbumId.value = ''
+    }
+  } catch {
+    albums.value = []
+    selectedAlbumId.value = ''
+  } finally {
+    albumsLoading.value = false
+  }
 }
 
 async function handlePublish() {
   if (!canPublish.value || publishing.value) return
   publishing.value = true
   errorMessage.value = ''
+  statusMessage.value = ''
   try {
     if (mediaFiles.value.length) {
       const response = await uploadMedia(mediaFiles.value)
@@ -183,9 +278,30 @@ async function handlePublish() {
           type: file.type === 'video' ? 'video' : 'image',
           url: file.raw_url || file.url,
         }))
+        uploadedMediaIds.value = response.files.map((file) => file.id)
       }
     }
     await createPost(content.value.trim(), uploadedUrls.value)
+    let albumAttachFailed = false
+    if (selectedAlbumId.value && uploadedMediaIds.value.length) {
+      try {
+        await bulkMediaAction({
+          action: 'add_to_album',
+          album_id: selectedAlbumId.value,
+          media_ids: uploadedMediaIds.value,
+        })
+      } catch {
+        albumAttachFailed = true
+      }
+    }
+    if (albumAttachFailed) {
+      resetMediaState()
+      content.value = ''
+      selectedAlbumId.value = ''
+      statusMessage.value = '动态已发布，但加入相册失败。可以稍后在媒体库整理。'
+      publishing.value = false
+      return
+    }
     resetMediaState()
     router.push('/')
   } catch (e) {
@@ -230,24 +346,24 @@ onBeforeUnmount(() => {
 }
 
 .primary-button:hover:not(:disabled) {
-  box-shadow: 0 10px 26px rgba(217, 77, 48, 0.16);
+  box-shadow: 0 10px 26px rgba(201, 67, 47, 0.14);
 }
 
 .editor-panel,
 .media-panel {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 238, 211, 0.08)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.36), rgba(45, 108, 104, 0.05)),
     var(--surface-card);
 }
 
 .editor-panel:focus-within,
 .media-panel:hover {
-  border-color: rgba(217, 77, 48, 0.18);
-  box-shadow: 0 20px 50px rgba(143, 80, 40, 0.14);
+  border-color: rgba(201, 67, 47, 0.16);
+  box-shadow: 0 20px 50px rgba(47, 39, 35, 0.1);
 }
 
 .editor-input:focus {
-  box-shadow: 0 0 0 3px rgba(227, 107, 93, 0.09);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .preview-tile {

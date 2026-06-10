@@ -128,7 +128,7 @@ function fmt(t: string): string {
 
 <style scoped>
 .post-card {
-  box-shadow: 0 16px 42px rgba(143, 80, 40, 0.12);
+  box-shadow: 0 16px 42px rgba(47, 39, 35, 0.09);
   transition:
     border-color 190ms ease,
     box-shadow 190ms ease,
@@ -137,8 +137,8 @@ function fmt(t: string): string {
 }
 
 .post-card:hover {
-  border-color: rgba(217, 77, 48, 0.2) !important;
-  box-shadow: 0 22px 54px rgba(143, 80, 40, 0.16);
+  border-color: rgba(201, 67, 47, 0.18) !important;
+  box-shadow: 0 22px 54px rgba(47, 39, 35, 0.12);
   transform: translateY(-2px);
 }
 
@@ -151,7 +151,7 @@ function fmt(t: string): string {
 }
 
 .post-card:hover .author-avatar {
-  background: rgba(227, 107, 93, 0.14) !important;
+  background: rgba(201, 67, 47, 0.12) !important;
   color: var(--accent) !important;
 }
 
@@ -160,7 +160,7 @@ function fmt(t: string): string {
 }
 
 .media-frame::after {
-  background: linear-gradient(180deg, rgba(255, 248, 235, 0.18), rgba(255, 248, 235, 0) 34%);
+  background: linear-gradient(180deg, rgba(255, 255, 252, 0.14), rgba(255, 255, 252, 0) 34%);
   content: '';
   inset: 0;
   opacity: 0;
@@ -194,7 +194,7 @@ function fmt(t: string): string {
 }
 
 .like-button:hover {
-  background: rgba(227, 107, 93, 0.1);
+  background: rgba(201, 67, 47, 0.1);
   opacity: 1;
 }
 

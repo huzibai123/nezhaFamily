@@ -1,8 +1,20 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useFamilySettings } from '@/composables/useFamilySettings'
+import { mediaUrl } from '@/utils/media'
 
 const isEnabled = ref(false)
 const cursorRef = ref<HTMLElement | null>(null)
+const { themeAssets } = useFamilySettings()
+
+const customCursor = computed(() => {
+  const cursor = themeAssets.value.cursor
+  return cursor?.enabled && cursor.url ? cursor : null
+})
+
+const cursorStyle = computed(() => ({
+  '--cursor-size': customCursor.value ? `${customCursor.value.size}px` : '5.75rem',
+}))
 
 let pointerQuery: MediaQueryList | null = null
 let motionQuery: MediaQueryList | null = null
@@ -93,33 +105,53 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div v-if="isEnabled" ref="cursorRef" class="nezha-cursor" aria-hidden="true">
-    <span class="nezha-cursor__silk nezha-cursor__silk--back"></span>
-    <span class="nezha-cursor__wheel nezha-cursor__wheel--left"></span>
-    <span class="nezha-cursor__ring"></span>
-    <span class="nezha-cursor__wheel nezha-cursor__wheel--right"></span>
-    <span class="nezha-cursor__silk nezha-cursor__silk--front"></span>
+  <div v-if="isEnabled" ref="cursorRef" class="nezha-cursor" :style="cursorStyle" aria-hidden="true">
+    <img
+      v-if="customCursor"
+      class="nezha-cursor__image"
+      :src="mediaUrl(customCursor.url || '')"
+      alt=""
+    />
+    <template v-else>
+      <span class="nezha-cursor__silk nezha-cursor__silk--back"></span>
+      <span class="nezha-cursor__wheel nezha-cursor__wheel--left"></span>
+      <span class="nezha-cursor__ring"></span>
+      <span class="nezha-cursor__wheel nezha-cursor__wheel--right"></span>
+      <span class="nezha-cursor__silk nezha-cursor__silk--front"></span>
+    </template>
   </div>
 </template>
 
 <style scoped>
 .nezha-cursor {
+  --cursor-size: 5.75rem;
   --nezha-x: -8rem;
   --nezha-y: -8rem;
   contain: layout style paint;
-  height: 5.75rem;
+  height: var(--cursor-size);
   inset: 0 auto auto 0;
   opacity: 0;
   pointer-events: none;
   position: fixed;
-  transform: translate3d(calc(var(--nezha-x) - 2.875rem), calc(var(--nezha-y) - 2.875rem), 0);
+  transform: translate3d(
+    calc(var(--nezha-x) - (var(--cursor-size) / 2)),
+    calc(var(--nezha-y) - (var(--cursor-size) / 2)),
+    0
+  );
   transition: opacity 180ms ease;
-  width: 5.75rem;
+  width: var(--cursor-size);
   z-index: 35;
 }
 
 .nezha-cursor.is-visible {
   opacity: 0.82;
+}
+
+.nezha-cursor__image {
+  height: 100%;
+  object-fit: contain;
+  width: 100%;
+  filter: drop-shadow(0 12px 22px rgba(44, 32, 28, 0.2));
 }
 
 .nezha-cursor__ring,

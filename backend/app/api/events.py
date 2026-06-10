@@ -3,7 +3,6 @@
 """
 from typing import Optional
 from uuid import UUID
-from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy import select, extract
 from sqlalchemy.ext.asyncio import AsyncSession

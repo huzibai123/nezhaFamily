@@ -1,16 +1,17 @@
 """
 轻量管理员与家庭设置 API
 """
+
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 from uuid import UUID
 import json
 import secrets
 import shutil
 import tarfile
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,7 +29,14 @@ from app.models.media import MediaFile
 from app.models.notification import Notification
 from app.models.post import Post
 from app.models.user import User
-from app.core.media_utils import MEDIA_ROOT, raw_media_url, signed_media_url
+from app.api.media import ALLOWED_IMAGE_EXTENSIONS, store_uploaded_media_files
+from app.core.media_utils import (
+    MEDIA_ROOT,
+    raw_media_url,
+    raw_media_value_urls,
+    signed_media_url,
+    signed_media_value_urls,
+)
 from app.schemas.admin import (
     AdminBackupCheck,
     AdminBackupItem,
@@ -43,9 +51,11 @@ from app.schemas.admin import (
     AdminStorageStatus,
     AdminUserResponse,
     AdminUserUpdate,
+    FamilyThemeAssets,
     FamilySettingsResponse,
     FamilySettingsUpdate,
 )
+from app.schemas.media import MediaUploadResponse
 
 router = APIRouter(prefix="/admin")
 BACKUP_ROOT = Path(__file__).parent.parent.parent / "backups"
@@ -99,6 +109,8 @@ def default_family_settings_response() -> FamilySettingsResponse:
         theme_color=None,
         accent_color=None,
         background_image_url=None,
+        logo_url=None,
+        theme_assets=FamilyThemeAssets(),
         updated_by=None,
         created_at=now,
         updated_at=now,
@@ -106,11 +118,17 @@ def default_family_settings_response() -> FamilySettingsResponse:
 
 
 def family_settings_response(settings_record: FamilySettings) -> FamilySettingsResponse:
-    """家庭设置响应中的本地媒体背景图需要短期签名。"""
+    """家庭设置响应中的本地媒体资产需要短期签名。"""
     response = FamilySettingsResponse.model_validate(settings_record)
+    theme_assets = response.theme_assets.model_dump() if response.theme_assets else {}
+    signed_theme_assets = FamilyThemeAssets.model_validate(
+        signed_media_value_urls(theme_assets)
+    )
     return response.model_copy(
         update={
             "background_image_url": signed_media_url(response.background_image_url),
+            "logo_url": signed_media_url(response.logo_url),
+            "theme_assets": signed_theme_assets,
         }
     )
 
@@ -152,7 +170,9 @@ def get_backup_dir(backup_id: str) -> Path:
     try:
         backup_dir.resolve().relative_to(BACKUP_ROOT.resolve())
     except ValueError:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="禁止访问该备份")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="禁止访问该备份"
+        )
 
     if not backup_dir.exists() or not backup_dir.is_dir():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="备份不存在")
@@ -188,15 +208,21 @@ def resolve_backup_file(backup_id: str, file_kind: str) -> tuple[Path, str]:
 
     path = file_map[file_kind]
     if file_kind == "media" and manifest.media_archive_file is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="该备份没有媒体归档")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="该备份没有媒体归档"
+        )
 
     if not path.exists() or not path.is_file():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="备份文件不存在")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="备份文件不存在"
+        )
 
     try:
         path.resolve().relative_to(backup_dir.resolve())
     except ValueError:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="禁止访问该文件")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="禁止访问该文件"
+        )
 
     return path, path.name
 
@@ -231,7 +257,9 @@ def verify_backup_snapshot(backup_id: str) -> AdminBackupVerification:
         AdminBackupCheck(
             label="manifest",
             ok=manifest is not None,
-            detail="manifest.json 可读取" if manifest else "manifest.json 缺失或格式错误",
+            detail=(
+                "manifest.json 可读取" if manifest else "manifest.json 缺失或格式错误"
+            ),
         )
     )
 
@@ -282,7 +310,11 @@ def verify_backup_snapshot(backup_id: str) -> AdminBackupVerification:
         status=status_value,
         verified_at=datetime.now(timezone.utc),
         checks=checks,
-        message="备份完整，可以下载用于恢复" if status_value == "valid" else "备份不完整，请检查文件",
+        message=(
+            "备份完整，可以下载用于恢复"
+            if status_value == "valid"
+            else "备份不完整，请检查文件"
+        ),
         restore_hint="先下载 database 与 media 文件；恢复生产数据前请停机并保留当前数据副本。",
     )
 
@@ -361,7 +393,9 @@ def count_snapshot_records(payload: dict) -> int:
     return sum(len(records) for records in payload.get("tables", {}).values())
 
 
-def create_media_archive(backup_dir: Path, backup_id: str) -> tuple[Optional[Path], int, int]:
+def create_media_archive(
+    backup_dir: Path, backup_id: str
+) -> tuple[Optional[Path], int, int]:
     """归档媒体目录，返回归档路径、文件数和大小。"""
     media_file_count, _ = bytes_in_directory(MEDIA_ROOT)
     if media_file_count == 0:
@@ -700,7 +734,9 @@ async def update_admin_user(
         select(func.count()).select_from(Comment).where(Comment.author_id == user.id)
     )
     media_count = await db.scalar(
-        select(func.count()).select_from(MediaFile).where(MediaFile.uploader_id == user.id)
+        select(func.count())
+        .select_from(MediaFile)
+        .where(MediaFile.uploader_id == user.id)
     )
 
     return AdminUserResponse(
@@ -769,8 +805,10 @@ async def update_family_settings(
 
     update_data = settings_data.model_dump()
     for field, value in update_data.items():
-        if field == "background_image_url":
+        if field in {"background_image_url", "logo_url"}:
             value = raw_media_url(value)
+        elif field == "theme_assets":
+            value = raw_media_value_urls(value)
         setattr(settings_record, field, value)
     settings_record.updated_by = current_user.id
 
@@ -778,3 +816,22 @@ async def update_family_settings(
     await db.refresh(settings_record)
 
     return family_settings_response(settings_record)
+
+
+@router.post("/theme-assets/upload", response_model=MediaUploadResponse)
+async def upload_theme_asset(
+    kind: Literal["background", "logo", "cursor", "ornament"] = Query(...),
+    files: list[UploadFile] = File(...),
+    current_user: User = Depends(get_current_active_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """上传管理员主题资产，保留原始图片/动图文件。"""
+    max_files = 1 if kind in {"logo", "cursor"} else 8
+    return await store_uploaded_media_files(
+        files=files,
+        db=db,
+        current_user=current_user,
+        allowed_extensions=ALLOWED_IMAGE_EXTENSIONS,
+        max_files=max_files,
+        process_images=False,
+    )

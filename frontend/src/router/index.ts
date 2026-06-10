@@ -53,6 +53,12 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
   },
   {
+    path: '/library',
+    name: 'MediaLibrary',
+    component: () => import('@/views/MediaLibraryPage.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/albums/:id',
     name: 'AlbumDetail',
     component: () => import('@/views/AlbumDetailPage.vue'),

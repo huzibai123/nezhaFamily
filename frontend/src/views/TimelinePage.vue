@@ -441,7 +441,7 @@ function syncDesktopState(event?: MediaQueryListEvent) {
 <style scoped>
 .timeline-page {
   background:
-    linear-gradient(180deg, rgba(255, 248, 235, 0.42) 0%, rgba(248, 217, 183, 0) 340px),
+    linear-gradient(180deg, rgba(255, 255, 252, 0.4) 0%, rgba(246, 241, 232, 0) 340px),
     transparent;
 }
 
@@ -471,7 +471,7 @@ function syncDesktopState(event?: MediaQueryListEvent) {
 }
 
 .primary-button:hover {
-  box-shadow: 0 10px 26px rgba(217, 77, 48, 0.16);
+  box-shadow: 0 10px 26px rgba(201, 67, 47, 0.14);
 }
 
 .nav-link {
@@ -486,7 +486,7 @@ function syncDesktopState(event?: MediaQueryListEvent) {
 
 .nav-link:hover,
 .context-link:hover {
-  background: rgba(217, 77, 48, 0.08);
+  background: rgba(201, 67, 47, 0.08);
   color: var(--text);
 }
 
@@ -511,12 +511,12 @@ function syncDesktopState(event?: MediaQueryListEvent) {
 
 .quick-publish,
 .empty-state {
-  box-shadow: 0 18px 45px rgba(143, 80, 40, 0.13);
+  box-shadow: 0 18px 45px rgba(47, 39, 35, 0.09);
 }
 
 .quick-publish {
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.28), rgba(217, 77, 48, 0.08)),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.36), rgba(45, 108, 104, 0.08)),
     var(--surface-card) !important;
 }
 
@@ -527,14 +527,14 @@ function syncDesktopState(event?: MediaQueryListEvent) {
 
 .anniversary-card {
   background:
-    linear-gradient(135deg, rgba(217, 77, 48, 0.08), rgba(255, 255, 255, 0.34)),
+    linear-gradient(135deg, rgba(201, 67, 47, 0.08), rgba(255, 255, 255, 0.34)),
     var(--surface-card) !important;
   overflow: hidden;
 }
 
 .anniversary-card::after {
   animation: anniversary-ring 10s linear infinite;
-  background: conic-gradient(from 20deg, rgba(217, 77, 48, 0.18), rgba(212, 137, 37, 0.22), rgba(92, 121, 84, 0.12), rgba(217, 77, 48, 0.18));
+  background: conic-gradient(from 20deg, rgba(201, 67, 47, 0.14), rgba(45, 108, 104, 0.16), rgba(66, 81, 132, 0.12), rgba(201, 67, 47, 0.14));
   border-radius: 999px;
   content: '';
   height: 7rem;
@@ -554,22 +554,22 @@ function syncDesktopState(event?: MediaQueryListEvent) {
 
 .filter-input:focus {
   border-color: var(--border-focus);
-  box-shadow: 0 0 0 3px rgba(217, 77, 48, 0.1);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .quick-publish:hover,
 .anniversary-card:hover,
 .memory-filter:hover,
 .empty-state:hover {
-  border-color: rgba(217, 77, 48, 0.18) !important;
-  box-shadow: 0 22px 54px rgba(143, 80, 40, 0.16);
+  border-color: rgba(201, 67, 47, 0.16) !important;
+  box-shadow: 0 22px 54px rgba(47, 39, 35, 0.12);
   transform: translateY(-1px);
 }
 
 .memory-tile {
   background:
-    linear-gradient(135deg, rgba(217, 77, 48, 0.16), rgba(255, 255, 255, 0.36)),
-    rgba(255, 248, 235, 0.36);
+    linear-gradient(135deg, rgba(201, 67, 47, 0.12), rgba(45, 108, 104, 0.1)),
+    rgba(255, 255, 252, 0.36);
 }
 
 .context-link {

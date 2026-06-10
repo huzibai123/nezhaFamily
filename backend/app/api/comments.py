@@ -1,7 +1,6 @@
 """
 评论相关的 API 路由
 """
-from typing import Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import delete as sql_delete, select, func, update

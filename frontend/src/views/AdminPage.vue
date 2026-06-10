@@ -3,7 +3,10 @@
     <template #header>
       <div class="admin-hero overflow-hidden rounded-xl border border-[var(--border)] p-5 shadow-[var(--shadow-panel)] sm:p-6">
         <div class="grid gap-5 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center">
-          <FamilySeal :label="settings.family_name || '哪吒家庭'" />
+          <FamilySeal
+            :label="settings.family_name || '哪吒家庭'"
+            :logo-url="previewUrl(settings.logo_url || '')"
+          />
           <div class="min-w-0">
             <p class="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--text-muted)]">
               Family archive console
@@ -29,7 +32,7 @@
     <div class="space-y-6">
       <p
         v-if="message"
-        class="rounded-lg border border-[color:rgb(217_77_48_/_0.22)] bg-[var(--accent-soft)] px-4 py-3 text-sm text-[var(--accent)]"
+        class="rounded-lg border border-[var(--border-focus)] bg-[var(--accent-soft)] px-4 py-3 text-sm text-[var(--accent)]"
       >
         {{ message }}
       </p>
@@ -105,7 +108,7 @@
             <div
               v-for="media in uploadWarnings"
               :key="media.id"
-              class="activity-row rounded-lg border border-[color:rgb(217_77_48_/_0.22)] bg-[var(--accent-soft)] p-3"
+              class="activity-row rounded-lg border border-[var(--border-focus)] bg-[var(--accent-soft)] p-3"
             >
               <p class="truncate text-sm font-medium text-[var(--accent)]">{{ media.original_name || media.id }}</p>
               <p class="mt-1 text-xs leading-5 text-[var(--text-secondary)]">
@@ -305,7 +308,7 @@
 
               <div
                 v-if="backupVerificationText[item.backup_id]"
-                class="mt-3 rounded-lg border border-[color:rgb(217_77_48_/_0.16)] bg-[var(--accent-soft)] px-3 py-2 text-xs leading-5 text-[var(--accent)]"
+                class="mt-3 rounded-lg border border-[var(--border-focus)] bg-[var(--accent-soft)] px-3 py-2 text-xs leading-5 text-[var(--accent)]"
               >
                 {{ backupVerificationText[item.backup_id] }}
               </div>
@@ -314,47 +317,213 @@
         </article>
       </section>
 
-      <section class="admin-panel rounded-xl border border-[var(--border)] bg-[var(--surface-card)] p-4 shadow-[var(--shadow-panel)] sm:p-5">
-        <div class="border-b border-[var(--border)] pb-4">
-          <p class="text-xs font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">Identity</p>
-          <h2 class="mt-2 text-xl font-semibold text-[var(--text)]">家庭设置</h2>
-        </div>
-
-        <div class="mt-4 grid gap-4 lg:grid-cols-2">
-          <label class="space-y-1.5">
-            <span class="text-xs text-[var(--text-muted)]">家庭名称</span>
-            <input v-model="settings.family_name" class="admin-input w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-sm text-[var(--text)] outline-none" />
-          </label>
-          <label class="space-y-1.5">
-            <span class="text-xs text-[var(--text-muted)]">一句话说明</span>
-            <input v-model="settings.tagline" class="admin-input w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-sm text-[var(--text)] outline-none" />
-          </label>
-          <label class="space-y-1.5">
-            <span class="text-xs text-[var(--text-muted)]">主题色</span>
-            <input v-model="settings.theme_color" type="color" class="color-input h-11 w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] p-1" />
-          </label>
-          <label class="space-y-1.5">
-            <span class="text-xs text-[var(--text-muted)]">强调色</span>
-            <input v-model="settings.accent_color" type="color" class="color-input h-11 w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] p-1" />
-          </label>
-          <label class="space-y-1.5 lg:col-span-2">
-            <span class="text-xs text-[var(--text-muted)]">本地背景图 URL</span>
-            <input
-              v-model="settings.background_image_url"
-              class="admin-input w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-sm text-[var(--text)] outline-none"
-              placeholder="/media/your-family-background.jpg"
-            />
-          </label>
-        </div>
-
-        <div class="mt-5 flex justify-end">
+      <section class="theme-studio rounded-xl border border-[var(--border)] bg-[var(--surface-card)] p-4 shadow-[var(--shadow-panel)] sm:p-5">
+        <div class="flex flex-col gap-3 border-b border-[var(--border)] pb-4 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <p class="text-xs font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">Theme studio</p>
+            <h2 class="mt-2 text-xl font-semibold text-[var(--text)]">家庭主题工作台</h2>
+          </div>
           <button
             @click="saveSettings"
-            class="primary-button rounded-lg bg-[var(--text)] px-5 py-2.5 text-sm font-medium text-[var(--surface)]"
+            class="primary-button inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--text)] px-5 py-2.5 text-sm font-medium text-[var(--surface)]"
             type="button"
           >
-            保存家庭设置
+            <Check :size="16" stroke-width="2" aria-hidden="true" />
+            保存主题
           </button>
+        </div>
+
+        <div class="mt-5 grid gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+          <div
+            class="theme-preview overflow-hidden rounded-lg border border-[var(--border)]"
+            :style="{ '--preview-background': activeBackgroundUrl ? `url('${previewUrl(activeBackgroundUrl)}')` : 'none' }"
+          >
+            <div class="theme-preview__stage">
+              <img
+                v-for="ornament in enabledOrnaments"
+                :key="ornament.id"
+                :src="previewUrl(ornament.url)"
+                alt=""
+                class="theme-preview__ornament"
+                :class="`theme-preview__ornament--${ornament.position}`"
+                :style="{ width: `${Math.round(ornament.size * 0.52)}px`, opacity: ornament.opacity }"
+              />
+              <div class="theme-preview__content">
+                <FamilySeal
+                  compact
+                  :label="settings.family_name || '哪吒家庭'"
+                  :logo-url="previewUrl(settings.logo_url || '')"
+                />
+                <div class="min-w-0">
+                  <p class="text-xs font-medium uppercase tracking-[0.16em] text-[var(--text-muted)]">Live preview</p>
+                  <h3 class="mt-2 truncate text-2xl font-semibold text-[var(--text)]">
+                    {{ settings.family_name || '哪吒家庭' }}
+                  </h3>
+                  <p class="mt-2 line-clamp-2 text-sm leading-6 text-[var(--text-secondary)]">
+                    {{ settings.tagline || '私有的家庭记忆中枢' }}
+                  </p>
+                </div>
+              </div>
+              <div v-if="cursorAsset?.enabled && cursorAsset.url" class="theme-preview__cursor">
+                <MousePointer2 :size="16" stroke-width="2" aria-hidden="true" />
+                <img :src="previewUrl(cursorAsset.url)" alt="" :style="{ width: `${Math.round(cursorAsset.size * 0.52)}px` }" />
+              </div>
+            </div>
+          </div>
+
+          <div class="grid gap-4">
+            <div class="grid gap-4 lg:grid-cols-2">
+              <label class="space-y-1.5">
+                <span class="text-xs text-[var(--text-muted)]">家庭名称</span>
+                <input v-model="settings.family_name" class="admin-input w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-sm text-[var(--text)] outline-none" />
+              </label>
+              <label class="space-y-1.5">
+                <span class="text-xs text-[var(--text-muted)]">一句话说明</span>
+                <input v-model="settings.tagline" class="admin-input w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2.5 text-sm text-[var(--text)] outline-none" />
+              </label>
+              <label class="space-y-1.5">
+                <span class="text-xs text-[var(--text-muted)]">画布色</span>
+                <input v-model="settings.theme_color" type="color" class="color-input h-11 w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] p-1" />
+              </label>
+              <label class="space-y-1.5">
+                <span class="text-xs text-[var(--text-muted)]">强调色</span>
+                <input v-model="settings.accent_color" type="color" class="color-input h-11 w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] p-1" />
+              </label>
+            </div>
+
+            <div class="theme-tool-row rounded-lg border border-[var(--border)] bg-[var(--surface-panel)] p-3">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p class="text-sm font-semibold text-[var(--text)]">家庭 Logo</p>
+                  <p class="text-xs text-[var(--text-muted)]">{{ settings.logo_url ? '已使用上传图片' : '使用默认动态印章' }}</p>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  <button @click="logoInput?.click()" class="soft-button inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)]" type="button">
+                    <Upload :size="15" stroke-width="2" aria-hidden="true" />
+                    上传
+                  </button>
+                  <button v-if="settings.logo_url" @click="settings.logo_url = ''" class="soft-button inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)]" type="button">
+                    <Trash2 :size="15" stroke-width="2" aria-hidden="true" />
+                    移除
+                  </button>
+                </div>
+              </div>
+              <input ref="logoInput" class="hidden" type="file" accept="image/jpeg,image/png,image/gif,image/webp" @change="uploadThemeFile('logo', $event)" />
+            </div>
+
+            <div class="theme-tool-row rounded-lg border border-[var(--border)] bg-[var(--surface-panel)] p-3">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p class="text-sm font-semibold text-[var(--text)]">背景图库</p>
+                  <p class="text-xs text-[var(--text-muted)]">{{ themeAssetDraft.backgrounds.length }} / 12</p>
+                </div>
+                <button @click="backgroundInput?.click()" class="soft-button inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)]" type="button">
+                  <ImageIcon :size="15" stroke-width="2" aria-hidden="true" />
+                  上传背景
+                </button>
+              </div>
+              <input ref="backgroundInput" class="hidden" type="file" accept="image/jpeg,image/png,image/gif,image/webp" @change="uploadThemeFile('background', $event)" />
+              <div v-if="themeAssetDraft.backgrounds.length" class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                <article
+                  v-for="asset in themeAssetDraft.backgrounds"
+                  :key="asset.id"
+                  class="background-choice overflow-hidden rounded-lg border"
+                  :class="settings.background_image_url === asset.url ? 'background-choice-active' : 'border-[var(--border)]'"
+                >
+                  <button @click="selectBackground(asset.url)" class="block w-full text-left" type="button">
+                    <img :src="previewUrl(asset.url)" alt="" class="aspect-[4/3] w-full object-cover" />
+                    <span class="block truncate px-2 py-1.5 text-xs text-[var(--text-muted)]">{{ asset.label || '家庭背景' }}</span>
+                  </button>
+                  <button
+                    @click="removeBackground(asset.id)"
+                    class="background-choice__delete grid h-8 w-full place-items-center border-t border-[var(--border)] text-[var(--text-muted)] hover:text-[var(--accent)]"
+                    type="button"
+                    aria-label="移除背景"
+                  >
+                    <Trash2 :size="14" stroke-width="2" aria-hidden="true" />
+                  </button>
+                </article>
+              </div>
+            </div>
+
+            <div class="theme-tool-row rounded-lg border border-[var(--border)] bg-[var(--surface-panel)] p-3">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p class="text-sm font-semibold text-[var(--text)]">鼠标跟随小动图</p>
+                  <p class="text-xs text-[var(--text-muted)]">桌面端精细指针启用</p>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  <button @click="cursorInput?.click()" class="soft-button inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)]" type="button">
+                    <MousePointer2 :size="15" stroke-width="2" aria-hidden="true" />
+                    上传
+                  </button>
+                  <button v-if="cursorAsset?.url" @click="removeCursorAsset" class="soft-button inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)]" type="button">
+                    <Trash2 :size="15" stroke-width="2" aria-hidden="true" />
+                    移除
+                  </button>
+                </div>
+              </div>
+              <input ref="cursorInput" class="hidden" type="file" accept="image/jpeg,image/png,image/gif,image/webp" @change="uploadThemeFile('cursor', $event)" />
+              <div v-if="cursorAsset" class="mt-3 grid gap-3 sm:grid-cols-[auto_minmax(0,1fr)] sm:items-center">
+                <label class="inline-flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+                  <input v-model="cursorAsset.enabled" type="checkbox" class="h-4 w-4 rounded border-[var(--border)]" />
+                  启用
+                </label>
+                <label class="flex items-center gap-3 text-xs text-[var(--text-muted)]">
+                  大小
+                  <input v-model.number="cursorAsset.size" type="range" min="24" max="160" class="min-w-0 flex-1" />
+                  <span class="w-10 text-right">{{ cursorAsset.size }}</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="theme-tool-row rounded-lg border border-[var(--border)] bg-[var(--surface-panel)] p-3">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p class="text-sm font-semibold text-[var(--text)]">UI 小挂饰</p>
+                  <p class="text-xs text-[var(--text-muted)]">{{ themeAssetDraft.ornaments.length }} / 8</p>
+                </div>
+                <button @click="ornamentInput?.click()" class="soft-button inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)]" type="button">
+                  <Sparkles :size="15" stroke-width="2" aria-hidden="true" />
+                  上传挂饰
+                </button>
+              </div>
+              <input ref="ornamentInput" class="hidden" type="file" accept="image/jpeg,image/png,image/gif,image/webp" @change="uploadThemeFile('ornament', $event)" />
+              <div v-if="themeAssetDraft.ornaments.length" class="mt-3 space-y-2">
+                <article
+                  v-for="ornament in themeAssetDraft.ornaments"
+                  :key="ornament.id"
+                  class="ornament-row grid gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface-card)] p-3 lg:grid-cols-[auto_minmax(0,1fr)_auto]"
+                >
+                  <img :src="previewUrl(ornament.url)" alt="" class="h-14 w-14 rounded-lg object-cover" />
+                  <div class="grid gap-2 sm:grid-cols-3">
+                    <select v-model="ornament.position" class="admin-input rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-sm text-[var(--text)] outline-none">
+                      <option v-for="option in ornamentPositions" :key="option.value" :value="option.value">
+                        {{ option.label }}
+                      </option>
+                    </select>
+                    <label class="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+                      尺寸
+                      <input v-model.number="ornament.size" type="range" min="24" max="220" class="min-w-0 flex-1" />
+                    </label>
+                    <label class="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+                      透明
+                      <input v-model.number="ornament.opacity" type="range" min="0.1" max="1" step="0.05" class="min-w-0 flex-1" />
+                    </label>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <label class="inline-flex items-center gap-1.5 text-xs text-[var(--text-muted)]">
+                      <input v-model="ornament.enabled" type="checkbox" class="h-4 w-4 rounded border-[var(--border)]" />
+                      显示
+                    </label>
+                    <button @click="removeOrnament(ornament.id)" class="soft-button grid h-9 w-9 place-items-center rounded-lg border border-[var(--border)] text-[var(--text-muted)]" type="button" aria-label="移除挂饰">
+                      <Trash2 :size="15" stroke-width="2" aria-hidden="true" />
+                    </button>
+                  </div>
+                </article>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
     </div>
@@ -400,10 +569,12 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
+import { Check, Image as ImageIcon, MousePointer2, Sparkles, Trash2, Upload } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'
 import AppShell from '@/components/AppShell.vue'
 import FamilySeal from '@/components/FamilySeal.vue'
 import RightRail from '@/components/RightRail.vue'
+import { mediaUrl } from '@/utils/media'
 import { useAuth } from '@/composables/useAuth'
 import {
   createAdminBackup,
@@ -414,6 +585,7 @@ import {
   regenerateUserInviteCode,
   updateAdminUser,
   updateFamilySettings,
+  uploadThemeAsset,
   verifyAdminBackup,
   type AdminBackupFileKind,
   type AdminOverview,
@@ -422,6 +594,10 @@ import {
   type AdminBackupItem,
   type AdminStorageStatus,
   type FamilySettings,
+  type FamilyThemeAssets,
+  type ThemeAssetKind,
+  type ThemeBackgroundAsset,
+  type ThemeOrnamentPosition,
 } from '@/api/admin'
 import { useFamilySettings } from '@/composables/useFamilySettings'
 
@@ -430,6 +606,12 @@ interface MemberDraft {
   role_in_family: string
   bio: string
 }
+
+const emptyThemeAssets = (): FamilyThemeAssets => ({
+  backgrounds: [],
+  cursor: null,
+  ornaments: [],
+})
 
 const router = useRouter()
 const { user: currentUser, refreshCurrentUser, setUser } = useAuth()
@@ -443,13 +625,27 @@ const verifyingBackupId = ref('')
 const downloadingBackupKey = ref('')
 const backupVerificationText = reactive<Record<string, string>>({})
 const { setFamilySettings } = useFamilySettings()
+const logoInput = ref<HTMLInputElement>()
+const backgroundInput = ref<HTMLInputElement>()
+const cursorInput = ref<HTMLInputElement>()
+const ornamentInput = ref<HTMLInputElement>()
+const themePreviewUrls = reactive<Record<string, string>>({})
 const settings = reactive<FamilySettings>({
   family_name: '哪吒家庭',
   tagline: '私有的家庭记忆中枢',
-  theme_color: '#f8d9b7',
-  accent_color: '#d94d30',
+  theme_color: '#f6f1e8',
+  accent_color: '#c9432f',
   background_image_url: '',
+  logo_url: '',
+  theme_assets: emptyThemeAssets(),
 })
+
+const ornamentPositions: Array<{ value: ThemeOrnamentPosition; label: string }> = [
+  { value: 'top-left', label: '左上' },
+  { value: 'top-right', label: '右上' },
+  { value: 'bottom-left', label: '左下' },
+  { value: 'bottom-right', label: '右下' },
+]
 
 const statCards = computed(() => {
   const totals = overviewTotals.value
@@ -489,6 +685,15 @@ const recentPosters = computed(() =>
 const recentComments = computed(() => overview.value?.recent_comments ?? [])
 const recentMedia = computed(() => overview.value?.recent_media ?? [])
 const uploadWarnings = computed(() => overview.value?.upload_warnings ?? [])
+const themeAssetDraft = computed(() => ensureThemeAssets())
+const cursorAsset = computed(() => themeAssetDraft.value.cursor)
+const enabledOrnaments = computed(() =>
+  themeAssetDraft.value.ornaments.filter(ornament => ornament.enabled && ornament.url)
+)
+const activeBackgroundUrl = computed(() => {
+  if (settings.background_image_url) return settings.background_image_url
+  return themeAssetDraft.value.backgrounds.find(asset => asset.enabled)?.url || ''
+})
 
 const storageCards = computed(() => [
   { label: '目录文件', value: storageStatus.value.media_file_count },
@@ -696,24 +901,190 @@ async function copyInvite(member: AdminUser) {
   }
 }
 
+async function uploadThemeFile(kind: ThemeAssetKind, event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+
+  const assets = ensureThemeAssets()
+  if (kind === 'background' && assets.backgrounds.length >= 12) {
+    message.value = '背景图库最多保存 12 张'
+    return
+  }
+  if (kind === 'ornament' && assets.ornaments.length >= 8) {
+    message.value = 'UI 挂饰最多保存 8 个'
+    return
+  }
+
+  try {
+    const response = await uploadThemeAsset(kind, [file])
+    const uploaded = response.files[0]
+    const rawUrl = uploaded.raw_url || stripMediaToken(uploaded.url)
+    const signedUrl = uploaded.url || rawUrl
+    if (!rawUrl) throw new Error('upload_missing_url')
+    themePreviewUrls[rawUrl] = signedUrl
+
+    if (kind === 'logo') {
+      settings.logo_url = rawUrl
+    } else if (kind === 'background') {
+      const asset: ThemeBackgroundAsset = {
+        id: createThemeAssetId('bg'),
+        url: rawUrl,
+        label: file.name,
+        enabled: true,
+      }
+      assets.backgrounds.unshift(asset)
+      settings.background_image_url = rawUrl
+    } else if (kind === 'cursor') {
+      assets.cursor = {
+        url: rawUrl,
+        enabled: true,
+        size: 76,
+      }
+    } else {
+      assets.ornaments.push({
+        id: createThemeAssetId('orn'),
+        url: rawUrl,
+        position: ornamentPositions[assets.ornaments.length % ornamentPositions.length].value,
+        enabled: true,
+        size: 96,
+        opacity: 0.72,
+      })
+    }
+
+    settings.theme_assets = normalizeThemeAssets(assets)
+    message.value = `${themeAssetLabel(kind)}已上传，保存后对全家生效`
+  } catch (error) {
+    message.value = typeof error === 'string' ? error : `${themeAssetLabel(kind)}上传失败`
+  }
+}
+
+function selectBackground(url: string) {
+  settings.background_image_url = url
+  ensureThemeAssets().backgrounds.forEach((asset) => {
+    asset.enabled = asset.url === url
+  })
+}
+
+function removeBackground(assetId: string) {
+  const assets = ensureThemeAssets()
+  const removed = assets.backgrounds.find(asset => asset.id === assetId)
+  assets.backgrounds = assets.backgrounds.filter(asset => asset.id !== assetId)
+  if (removed?.url === settings.background_image_url) {
+    settings.background_image_url = assets.backgrounds[0]?.url || ''
+  }
+}
+
+function removeCursorAsset() {
+  ensureThemeAssets().cursor = null
+}
+
+function removeOrnament(assetId: string) {
+  const assets = ensureThemeAssets()
+  assets.ornaments = assets.ornaments.filter(ornament => ornament.id !== assetId)
+}
+
+function ensureThemeAssets(): FamilyThemeAssets {
+  if (!settings.theme_assets) {
+    settings.theme_assets = emptyThemeAssets()
+  }
+  settings.theme_assets.backgrounds ||= []
+  settings.theme_assets.ornaments ||= []
+  return settings.theme_assets
+}
+
+function normalizeThemeAssets(value: FamilyThemeAssets): FamilyThemeAssets {
+  return {
+    backgrounds: (value.backgrounds || []).slice(0, 12).map((asset) => ({
+      id: asset.id || createThemeAssetId('bg'),
+      url: asset.url,
+      label: asset.label || '',
+      enabled: asset.enabled !== false,
+    })),
+    cursor: value.cursor?.url
+      ? {
+          url: value.cursor.url,
+          enabled: Boolean(value.cursor.enabled),
+          size: clampNumber(value.cursor.size, 24, 160, 76),
+        }
+      : null,
+    ornaments: (value.ornaments || []).slice(0, 8).map((ornament, index) => ({
+      id: ornament.id || createThemeAssetId('orn'),
+      url: ornament.url,
+      position: ornament.position || ornamentPositions[index % ornamentPositions.length].value,
+      enabled: ornament.enabled !== false,
+      size: clampNumber(ornament.size, 24, 220, 96),
+      opacity: clampNumber(ornament.opacity, 0.1, 1, 0.72),
+    })),
+  }
+}
+
+function createThemeAssetId(prefix: string): string {
+  return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+}
+
+function clampNumber(value: number | undefined, min: number, max: number, fallback: number) {
+  if (typeof value !== 'number' || Number.isNaN(value)) return fallback
+  return Math.min(max, Math.max(min, value))
+}
+
+function previewUrl(url: string): string {
+  if (!url) return ''
+  return mediaUrl(themePreviewUrls[url] || url)
+}
+
+function stripMediaToken(url: string): string {
+  if (!url.startsWith('/media/')) return url
+  return url.split('?', 1)[0]
+}
+
+function themeAssetLabel(kind: ThemeAssetKind): string {
+  if (kind === 'background') return '背景图'
+  if (kind === 'logo') return '家庭 Logo'
+  if (kind === 'cursor') return '鼠标小动图'
+  return 'UI 挂饰'
+}
+
 async function saveSettings() {
   try {
+    settings.theme_assets = normalizeThemeAssets(ensureThemeAssets())
     const updated = await updateFamilySettings(settings)
     Object.assign(settings, withDefaultSettings(updated))
     setFamilySettings(settings)
     message.value = '家庭设置已保存'
   } catch (error) {
-    message.value = typeof error === 'string' ? error : '家庭设置保存失败'
+    message.value = formatErrorMessage(error, '家庭设置保存失败')
   }
+}
+
+function formatErrorMessage(error: unknown, fallback: string): string {
+  if (typeof error === 'string') return error
+  if (Array.isArray(error)) {
+    return error
+      .map((item) => {
+        if (typeof item === 'string') return item
+        if (item && typeof item === 'object' && 'msg' in item) return String(item.msg)
+        return ''
+      })
+      .filter(Boolean)
+      .join('；') || fallback
+  }
+  if (error && typeof error === 'object' && 'message' in error) {
+    return String((error as { message: unknown }).message)
+  }
+  return fallback
 }
 
 function withDefaultSettings(value: FamilySettings): FamilySettings {
   return {
     family_name: value.family_name || '哪吒家庭',
     tagline: value.tagline || '私有的家庭记忆中枢',
-    theme_color: value.theme_color || '#f8d9b7',
-    accent_color: value.accent_color || '#d94d30',
+    theme_color: value.theme_color || '#f6f1e8',
+    accent_color: value.accent_color || '#c9432f',
     background_image_url: value.background_image_url || '',
+    logo_url: value.logo_url || '',
+    theme_assets: normalizeThemeAssets(value.theme_assets || emptyThemeAssets()),
     updated_by: value.updated_by,
     created_at: value.created_at,
     updated_at: value.updated_at,
@@ -797,7 +1168,7 @@ function backupFileLabel(fileKind: AdminBackupFileKind): string {
 .admin-panel,
 .stat-card {
   background:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.34), rgba(217, 77, 48, 0.06)),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.38), rgba(45, 108, 104, 0.06)),
     var(--surface-card);
 }
 
@@ -806,12 +1177,131 @@ function backupFileLabel(fileKind: AdminBackupFileKind): string {
   position: relative;
 }
 
+.theme-studio,
+.theme-tool-row,
+.theme-preview,
+.background-choice,
+.ornament-row {
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.theme-preview {
+  --preview-background: none;
+  background:
+    linear-gradient(180deg, rgba(246, 241, 232, 0.74), rgba(232, 224, 210, 0.52)),
+    var(--preview-background),
+    var(--surface-panel);
+  background-position: center;
+  background-size: auto, cover, auto;
+  min-height: 24rem;
+  position: relative;
+}
+
+.theme-preview__stage {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.36), rgba(45, 108, 104, 0.06)),
+    rgba(255, 255, 255, 0.22);
+  display: grid;
+  inset: 1rem;
+  overflow: hidden;
+  padding: 1.25rem;
+  place-items: center;
+  position: absolute;
+  border: 1px solid rgba(63, 45, 36, 0.12);
+  border-radius: 14px;
+}
+
+.theme-preview__content {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.58);
+  border: 1px solid rgba(63, 45, 36, 0.12);
+  border-radius: 14px;
+  box-shadow: 0 18px 42px rgba(63, 45, 36, 0.12);
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: auto minmax(0, 1fr);
+  max-width: 24rem;
+  padding: 1rem;
+  position: relative;
+  width: 100%;
+  z-index: 1;
+}
+
+.theme-preview__cursor {
+  align-items: center;
+  background: rgba(255, 255, 255, 0.64);
+  border: 1px solid rgba(63, 45, 36, 0.12);
+  border-radius: 999px;
+  bottom: 1rem;
+  color: var(--text-muted);
+  display: inline-flex;
+  gap: 0.55rem;
+  padding: 0.45rem 0.7rem;
+  position: absolute;
+  right: 1rem;
+}
+
+.theme-preview__cursor img {
+  max-height: 3rem;
+  object-fit: contain;
+}
+
+.theme-preview__ornament {
+  filter: drop-shadow(0 12px 18px rgba(63, 45, 36, 0.16));
+  position: absolute;
+  z-index: 0;
+}
+
+.theme-preview__ornament--top-left {
+  left: 1rem;
+  top: 1rem;
+}
+
+.theme-preview__ornament--top-right {
+  right: 1rem;
+  top: 1rem;
+}
+
+.theme-preview__ornament--bottom-left {
+  bottom: 1rem;
+  left: 1rem;
+}
+
+.theme-preview__ornament--bottom-right {
+  bottom: 1rem;
+  right: 1rem;
+}
+
+.theme-tool-row:hover,
+.background-choice:hover,
+.ornament-row:hover {
+  border-color: rgba(201, 67, 47, 0.18);
+  box-shadow: 0 14px 34px rgba(63, 45, 36, 0.1);
+}
+
+.background-choice-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.background-choice__delete {
+  transition: color 160ms ease, background-color 160ms ease;
+}
+
+.background-choice__delete:hover {
+  background: var(--accent-soft);
+}
+
 .wind-wheel {
   animation: admin-wheel-spin 2.8s linear infinite;
   background:
-    radial-gradient(circle, rgba(255, 248, 235, 0.9) 0 18%, transparent 19%),
-    conic-gradient(from 20deg, rgba(217, 77, 48, 0), rgba(217, 77, 48, 0.72), rgba(212, 137, 37, 0.82), rgba(217, 77, 48, 0));
-  border: 1px solid rgba(132, 74, 40, 0.16);
+    radial-gradient(circle, rgba(255, 255, 252, 0.9) 0 18%, transparent 19%),
+    conic-gradient(from 20deg, rgba(201, 67, 47, 0), rgba(201, 67, 47, 0.62), rgba(45, 108, 104, 0.58), rgba(201, 67, 47, 0));
+  border: 1px solid rgba(49, 38, 33, 0.14);
   border-radius: 999px;
   height: 3.2rem;
   opacity: 0.88;
@@ -824,7 +1314,7 @@ function backupFileLabel(fileKind: AdminBackupFileKind): string {
 
 .admin-hero::after {
   animation: admin-ribbon 9s ease-in-out infinite alternate;
-  background: linear-gradient(90deg, rgba(217, 77, 48, 0), rgba(217, 77, 48, 0.18), rgba(212, 137, 37, 0.12), rgba(217, 77, 48, 0));
+  background: linear-gradient(90deg, rgba(201, 67, 47, 0), rgba(201, 67, 47, 0.12), rgba(45, 108, 104, 0.1), rgba(201, 67, 47, 0));
   border-radius: 999px;
   bottom: 1.3rem;
   content: '';
@@ -840,20 +1330,20 @@ function backupFileLabel(fileKind: AdminBackupFileKind): string {
 .member-card:hover,
 .activity-row:hover,
 .admin-panel:focus-within {
-  border-color: rgba(217, 77, 48, 0.18);
-  box-shadow: 0 18px 44px rgba(143, 80, 40, 0.14);
+  border-color: rgba(201, 67, 47, 0.16);
+  box-shadow: 0 18px 44px rgba(47, 39, 35, 0.1);
   transform: translateY(-1px);
 }
 
 .member-card {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 238, 211, 0.08)),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(45, 108, 104, 0.05)),
     var(--surface-panel);
 }
 
 .admin-input:focus {
   border-color: var(--border-focus);
-  box-shadow: 0 0 0 3px rgba(217, 77, 48, 0.1);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .primary-button:hover,
@@ -863,11 +1353,11 @@ function backupFileLabel(fileKind: AdminBackupFileKind): string {
 
 .role-admin,
 .role-member {
-  border: 1px solid rgba(132, 74, 40, 0.12);
+  border: 1px solid rgba(49, 38, 33, 0.12);
 }
 
 .role-admin {
-  background: rgba(217, 77, 48, 0.12);
+  background: rgba(201, 67, 47, 0.12);
   color: var(--accent);
 }
 
@@ -898,6 +1388,11 @@ function backupFileLabel(fileKind: AdminBackupFileKind): string {
 @media (prefers-reduced-motion: reduce) {
   .admin-hero,
   .admin-panel,
+  .theme-studio,
+  .theme-tool-row,
+  .theme-preview,
+  .background-choice,
+  .ornament-row,
   .wind-wheel,
   .stat-card,
   .member-card,
@@ -914,6 +1409,9 @@ function backupFileLabel(fileKind: AdminBackupFileKind): string {
   .member-card:hover,
   .activity-row:hover,
   .admin-panel:focus-within,
+  .theme-tool-row:hover,
+  .background-choice:hover,
+  .ornament-row:hover,
   .primary-button:hover,
   .soft-button:hover {
     transform: none;

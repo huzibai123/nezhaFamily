@@ -26,6 +26,7 @@ class AlbumMediaItem(BaseModel):
     id: UUID
     url: str = Field(..., description="媒体文件 URL")
     type: str = Field(..., description="媒体类型：image 或 video")
+    added_at: Optional[datetime] = Field(None, description="加入相册时间")
 
 
 class AlbumResponse(BaseModel):

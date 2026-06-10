@@ -2,6 +2,7 @@
 媒体 API 测试
 测试媒体上传和获取
 """
+
 import pytest
 from datetime import datetime, timezone
 from io import BytesIO
@@ -11,16 +12,16 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import media_utils
-from app.api import media as media_api
 from app.models.user import User
-from app.models.media import MediaFile
+from app.models.album import Album, album_media
+from app.models.media import MediaFavorite, MediaFile
 from app.core.security import create_access_token
 
 
 PNG_IMAGE_BYTES = (
-    b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01'
-    b'\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\x00\x01'
-    b'\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82'
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+    b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\x00\x01"
+    b"\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
 )
 
 
@@ -33,15 +34,9 @@ async def test_upload_image_success(client: AsyncClient, test_user: User):
     # 创建一个简单的测试图片（1x1 像素 PNG）
     image_data = BytesIO(PNG_IMAGE_BYTES)
 
-    files = {
-        "files": ("test_image.png", image_data, "image/png")
-    }
+    files = {"files": ("test_image.png", image_data, "image/png")}
 
-    response = await client.post(
-        "/api/v1/upload",
-        files=files,
-        headers=headers
-    )
+    response = await client.post("/api/v1/upload", files=files, headers=headers)
 
     assert response.status_code == 200
     data = response.json()
@@ -68,7 +63,6 @@ async def test_upload_response_url_can_access_signed_media(
     media_root = tmp_path / "media"
     media_root.mkdir()
     monkeypatch.setattr(media_utils, "MEDIA_ROOT", media_root)
-    monkeypatch.setattr(media_api, "MEDIA_ROOT", media_root)
 
     token = create_access_token(data={"user_id": str(test_user.id)})
     headers = {"Authorization": f"Bearer {token}"}
@@ -97,7 +91,6 @@ async def test_upload_multi_file_failure_removes_saved_files_and_db_rows(
     media_root = tmp_path / "media"
     media_root.mkdir()
     monkeypatch.setattr(media_utils, "MEDIA_ROOT", media_root)
-    monkeypatch.setattr(media_api, "MEDIA_ROOT", media_root)
 
     token = create_access_token(data={"user_id": str(test_user.id)})
     headers = {"Authorization": f"Bearer {token}"}
@@ -135,11 +128,7 @@ async def test_upload_invalid_file_type(client: AsyncClient, test_user: User):
     file_data = BytesIO(b"text content")
     files = {"files": ("test.txt", file_data, "text/plain")}
 
-    response = await client.post(
-        "/api/v1/upload",
-        files=files,
-        headers=headers
-    )
+    response = await client.post("/api/v1/upload", files=files, headers=headers)
 
     assert response.status_code == 400
     assert "不支持的文件类型" in response.json()["detail"]
@@ -185,7 +174,7 @@ async def test_get_media_detail(client: AsyncClient, test_user: User, db: AsyncS
         original_name="test_image.jpg",
         mime_type="image/jpeg",
         file_size=1024,
-        uploader_id=test_user.id
+        uploader_id=test_user.id,
     )
     db.add(media)
     await db.commit()
@@ -194,10 +183,7 @@ async def test_get_media_detail(client: AsyncClient, test_user: User, db: AsyncS
     token = create_access_token(data={"user_id": str(test_user.id)})
     headers = {"Authorization": f"Bearer {token}"}
 
-    response = await client.get(
-        f"/api/v1/media/{media.id}",
-        headers=headers
-    )
+    response = await client.get(f"/api/v1/media/{media.id}", headers=headers)
 
     assert response.status_code == 200
     data = response.json()
@@ -395,6 +381,368 @@ async def test_search_media_uploaders_are_faceted_outside_pagination_and_uploade
 
 
 @pytest.mark.asyncio
+async def test_search_media_hides_deleted_files(
+    client: AsyncClient,
+    test_user: User,
+    db: AsyncSession,
+):
+    """测试普通媒体搜索不会返回回收站文件。"""
+    active_media = MediaFile(
+        file_path="/media/active-search.jpg",
+        file_type="image",
+        original_name="active-search.jpg",
+        uploader_id=test_user.id,
+    )
+    deleted_media = MediaFile(
+        file_path="/media/deleted-search.jpg",
+        file_type="image",
+        original_name="deleted-search.jpg",
+        uploader_id=test_user.id,
+        deleted_at=datetime(2026, 6, 10, 8, 0, tzinfo=timezone.utc),
+        deleted_by=test_user.id,
+    )
+    db.add_all([active_media, deleted_media])
+    await db.commit()
+
+    token = create_access_token(data={"user_id": str(test_user.id)})
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = await client.get("/api/v1/media/search", headers=headers)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+    assert data["media"][0]["id"] == str(active_media.id)
+
+
+@pytest.mark.asyncio
+async def test_media_library_filters_facets_and_user_favorites(
+    client: AsyncClient,
+    test_user: User,
+    test_admin: User,
+    db: AsyncSession,
+):
+    """测试媒体库筛选、月份/上传者 facet、收藏隔离和回收站统计。"""
+    favorite_media = MediaFile(
+        file_path="/media/library-favorite.jpg",
+        thumbnail_path="/media/thumbs/library-favorite.jpg",
+        file_type="image",
+        original_name="library-favorite.jpg",
+        caption="儿童节照片",
+        uploader_id=test_user.id,
+        captured_at=datetime(2026, 6, 1, 9, 0, tzinfo=timezone.utc),
+        created_at=datetime(2026, 6, 1, 9, 5, tzinfo=timezone.utc),
+    )
+    admin_media = MediaFile(
+        file_path="/media/library-video.mp4",
+        file_type="video",
+        original_name="library-video.mp4",
+        uploader_id=test_admin.id,
+        captured_at=datetime(2026, 5, 20, 20, 0, tzinfo=timezone.utc),
+        created_at=datetime(2026, 6, 2, 9, 0, tzinfo=timezone.utc),
+    )
+    deleted_media = MediaFile(
+        file_path="/media/library-trash.jpg",
+        file_type="image",
+        original_name="library-trash.jpg",
+        uploader_id=test_user.id,
+        captured_at=datetime(2026, 4, 1, 9, 0, tzinfo=timezone.utc),
+        deleted_at=datetime(2026, 6, 10, 8, 0, tzinfo=timezone.utc),
+        deleted_by=test_user.id,
+    )
+    db.add_all([favorite_media, admin_media, deleted_media])
+    await db.flush()
+    db.add(MediaFavorite(media_id=favorite_media.id, user_id=test_user.id))
+    db.add(MediaFavorite(media_id=admin_media.id, user_id=test_admin.id))
+    await db.commit()
+
+    token = create_access_token(data={"user_id": str(test_user.id)})
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = await client.get(
+        "/api/v1/media/library",
+        params={
+            "q": "library",
+            "date_from": "2026-05-01",
+            "date_to": "2026-06-30",
+            "page_size": 10,
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 2
+    assert data["trash_count"] == 1
+    assert data["favorite_count"] == 1
+    assert {item["id"] for item in data["media"]} == {
+        str(favorite_media.id),
+        str(admin_media.id),
+    }
+    favorite_item = next(item for item in data["media"] if item["id"] == str(favorite_media.id))
+    admin_item = next(item for item in data["media"] if item["id"] == str(admin_media.id))
+    assert favorite_item["is_favorite"] is True
+    assert favorite_item["caption"] == "儿童节照片"
+    assert favorite_item["thumbnail_url"].startswith("/media/thumbs/library-favorite.jpg?token=")
+    assert admin_item["is_favorite"] is False
+    assert {month["month"] for month in data["months"]} == {"2026-06", "2026-05"}
+    assert {uploader["id"] for uploader in data["uploaders"]} == {
+        str(test_user.id),
+        str(test_admin.id),
+    }
+
+    favorite_response = await client.get(
+        "/api/v1/media/library",
+        params={"favorite_only": "true"},
+        headers=headers,
+    )
+    assert favorite_response.status_code == 200
+    favorite_data = favorite_response.json()
+    assert favorite_data["total"] == 1
+    assert favorite_data["media"][0]["id"] == str(favorite_media.id)
+
+    trash_response = await client.get(
+        "/api/v1/media/library",
+        params={"trash_only": "true"},
+        headers=headers,
+    )
+    assert trash_response.status_code == 200
+    trash_data = trash_response.json()
+    assert trash_data["total"] == 1
+    assert trash_data["media"][0]["id"] == str(deleted_media.id)
+    assert trash_data["media"][0]["deleted_at"] is not None
+
+
+@pytest.mark.asyncio
+async def test_media_favorite_is_user_scoped_and_rejects_deleted(
+    client: AsyncClient,
+    test_user: User,
+    test_admin: User,
+    db: AsyncSession,
+):
+    """测试收藏按用户隔离，且不能收藏回收站文件。"""
+    media = MediaFile(
+        file_path="/media/scope-favorite.jpg",
+        file_type="image",
+        original_name="scope-favorite.jpg",
+        uploader_id=test_admin.id,
+    )
+    deleted_media = MediaFile(
+        file_path="/media/scope-deleted.jpg",
+        file_type="image",
+        original_name="scope-deleted.jpg",
+        uploader_id=test_admin.id,
+        deleted_at=datetime(2026, 6, 10, 8, 0, tzinfo=timezone.utc),
+        deleted_by=test_admin.id,
+    )
+    db.add_all([media, deleted_media])
+    await db.commit()
+
+    user_token = create_access_token(data={"user_id": str(test_user.id)})
+    user_headers = {"Authorization": f"Bearer {user_token}"}
+    admin_token = create_access_token(data={"user_id": str(test_admin.id)})
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    response = await client.post(
+        f"/api/v1/media/{media.id}/favorite",
+        headers=user_headers,
+    )
+    assert response.status_code == 200
+    assert response.json()["is_favorite"] is True
+
+    admin_library = await client.get(
+        "/api/v1/media/library",
+        params={"favorite_only": "true"},
+        headers=admin_headers,
+    )
+    assert admin_library.status_code == 200
+    assert admin_library.json()["total"] == 0
+
+    deleted_response = await client.post(
+        f"/api/v1/media/{deleted_media.id}/favorite",
+        headers=user_headers,
+    )
+    assert deleted_response.status_code == 404
+
+    toggle_response = await client.post(
+        f"/api/v1/media/{media.id}/favorite",
+        headers=user_headers,
+    )
+    assert toggle_response.status_code == 200
+    assert toggle_response.json()["is_favorite"] is False
+
+
+@pytest.mark.asyncio
+async def test_media_trash_restore_permissions_and_user_list_visibility(
+    client: AsyncClient,
+    test_user: User,
+    test_admin: User,
+    db: AsyncSession,
+):
+    """测试回收站权限、恢复和个人媒体列表隐藏软删除文件。"""
+    own_media = MediaFile(
+        file_path="/media/own-trash.jpg",
+        file_type="image",
+        original_name="own-trash.jpg",
+        uploader_id=test_user.id,
+    )
+    admin_media = MediaFile(
+        file_path="/media/admin-trash.jpg",
+        file_type="image",
+        original_name="admin-trash.jpg",
+        uploader_id=test_admin.id,
+    )
+    db.add_all([own_media, admin_media])
+    await db.commit()
+
+    token = create_access_token(data={"user_id": str(test_user.id)})
+    headers = {"Authorization": f"Bearer {token}"}
+
+    denied_response = await client.delete(f"/api/v1/media/{admin_media.id}", headers=headers)
+    assert denied_response.status_code == 200
+    assert denied_response.json()["affected"] == 0
+    assert denied_response.json()["skipped"] == 1
+
+    trash_response = await client.delete(f"/api/v1/media/{own_media.id}", headers=headers)
+    assert trash_response.status_code == 200
+    assert trash_response.json()["affected"] == 1
+
+    user_media_response = await client.get("/api/v1/media", headers=headers)
+    assert user_media_response.status_code == 200
+    assert user_media_response.json()["media"] == []
+
+    trash_library = await client.get(
+        "/api/v1/media/library",
+        params={"trash_only": "true"},
+        headers=headers,
+    )
+    assert trash_library.status_code == 200
+    assert trash_library.json()["total"] == 1
+
+    restore_response = await client.post(
+        f"/api/v1/media/{own_media.id}/restore",
+        headers=headers,
+    )
+    assert restore_response.status_code == 200
+    assert restore_response.json()["affected"] == 1
+
+    restored_library = await client.get("/api/v1/media/library", headers=headers)
+    assert restored_library.status_code == 200
+    assert restored_library.json()["total"] == 2
+
+
+@pytest.mark.asyncio
+async def test_media_bulk_add_to_album_skips_deleted_and_duplicates(
+    client: AsyncClient,
+    test_user: User,
+    db: AsyncSession,
+):
+    """测试批量加入相册会跳过已存在和回收站媒体，相册详情也隐藏回收站媒体。"""
+    album = Album(name="六月", description="夏天", created_by=test_user.id)
+    active_media = MediaFile(
+        file_path="/media/album-active.jpg",
+        file_type="image",
+        original_name="album-active.jpg",
+        uploader_id=test_user.id,
+    )
+    duplicate_media = MediaFile(
+        file_path="/media/album-duplicate.jpg",
+        file_type="image",
+        original_name="album-duplicate.jpg",
+        uploader_id=test_user.id,
+    )
+    deleted_media = MediaFile(
+        file_path="/media/album-deleted.jpg",
+        file_type="image",
+        original_name="album-deleted.jpg",
+        uploader_id=test_user.id,
+        deleted_at=datetime(2026, 6, 10, 8, 0, tzinfo=timezone.utc),
+        deleted_by=test_user.id,
+    )
+    db.add_all([album, active_media, duplicate_media, deleted_media])
+    await db.flush()
+    await db.execute(
+        album_media.insert().values(album_id=album.id, media_id=duplicate_media.id)
+    )
+    await db.execute(
+        album_media.insert().values(album_id=album.id, media_id=deleted_media.id)
+    )
+    await db.commit()
+
+    token = create_access_token(data={"user_id": str(test_user.id)})
+    headers = {"Authorization": f"Bearer {token}"}
+
+    response = await client.post(
+        "/api/v1/media/bulk",
+        json={
+            "action": "add_to_album",
+            "album_id": str(album.id),
+            "media_ids": [
+                str(active_media.id),
+                str(duplicate_media.id),
+                str(deleted_media.id),
+            ],
+        },
+        headers=headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["affected"] == 1
+    assert data["skipped"] == 2
+
+    album_response = await client.get(f"/api/v1/albums/{album.id}", headers=headers)
+    assert album_response.status_code == 200
+    album_data = album_response.json()
+    assert [item["id"] for item in album_data["media"]] == [
+        str(active_media.id),
+        str(duplicate_media.id),
+    ]
+    assert all(item["added_at"] for item in album_data["media"])
+
+
+@pytest.mark.asyncio
+async def test_media_update_requires_owner_or_admin_and_normalizes_caption(
+    client: AsyncClient,
+    test_user: User,
+    test_admin: User,
+    db: AsyncSession,
+):
+    """测试媒体元数据修改权限和说明清理。"""
+    media = MediaFile(
+        file_path="/media/edit-me.jpg",
+        file_type="image",
+        original_name="edit-me.jpg",
+        uploader_id=test_admin.id,
+    )
+    db.add(media)
+    await db.commit()
+
+    user_token = create_access_token(data={"user_id": str(test_user.id)})
+    user_headers = {"Authorization": f"Bearer {user_token}"}
+    admin_token = create_access_token(data={"user_id": str(test_admin.id)})
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
+
+    denied_response = await client.patch(
+        f"/api/v1/media/{media.id}",
+        json={"caption": "  偷偷改  "},
+        headers=user_headers,
+    )
+    assert denied_response.status_code == 403
+
+    captured_at = "2026-06-08T10:00:00Z"
+    response = await client.patch(
+        f"/api/v1/media/{media.id}",
+        json={"caption": "  一张旧照片  ", "captured_at": captured_at},
+        headers=admin_headers,
+    )
+    assert response.status_code == 200
+    data = response.json()
+    assert data["caption"] == "一张旧照片"
+    assert data["captured_at"].startswith("2026-06-08T10:00:00")
+
+
+@pytest.mark.asyncio
 async def test_search_media_requires_auth(client: AsyncClient):
     """测试媒体搜索必须登录。"""
     response = await client.get("/api/v1/media/search")
@@ -411,28 +759,23 @@ async def test_get_media_not_found(client: AsyncClient, test_user: User):
     # 使用一个不存在的 UUID
     fake_uuid = "00000000-0000-0000-0000-000000000000"
 
-    response = await client.get(
-        f"/api/v1/media/{fake_uuid}",
-        headers=headers
-    )
+    response = await client.get(f"/api/v1/media/{fake_uuid}", headers=headers)
 
     assert response.status_code == 404
     assert "媒体文件不存在" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
-async def test_get_user_media_list(client: AsyncClient, test_user: User, db: AsyncSession):
+async def test_get_user_media_list(
+    client: AsyncClient, test_user: User, db: AsyncSession
+):
     """测试获取当前用户的媒体列表"""
     # 创建多个测试媒体记录
     media1 = MediaFile(
-        file_path="/media/image1.jpg",
-        file_type="image",
-        uploader_id=test_user.id
+        file_path="/media/image1.jpg", file_type="image", uploader_id=test_user.id
     )
     media2 = MediaFile(
-        file_path="/media/video1.mp4",
-        file_type="video",
-        uploader_id=test_user.id
+        file_path="/media/video1.mp4", file_type="video", uploader_id=test_user.id
     )
     db.add_all([media1, media2])
     await db.commit()
@@ -451,14 +794,16 @@ async def test_get_user_media_list(client: AsyncClient, test_user: User, db: Asy
 
 
 @pytest.mark.asyncio
-async def test_get_user_media_pagination(client: AsyncClient, test_user: User, db: AsyncSession):
+async def test_get_user_media_pagination(
+    client: AsyncClient, test_user: User, db: AsyncSession
+):
     """测试媒体列表分页"""
     # 创建多个测试媒体记录
     for i in range(5):
         media = MediaFile(
             file_path=f"/media/image{i}.jpg",
             file_type="image",
-            uploader_id=test_user.id
+            uploader_id=test_user.id,
         )
         db.add(media)
     await db.commit()
@@ -467,10 +812,7 @@ async def test_get_user_media_pagination(client: AsyncClient, test_user: User, d
     headers = {"Authorization": f"Bearer {token}"}
 
     # 测试分页参数
-    response = await client.get(
-        "/api/v1/media?skip=2&limit=2",
-        headers=headers
-    )
+    response = await client.get("/api/v1/media?skip=2&limit=2", headers=headers)
 
     assert response.status_code == 200
     data = response.json()
