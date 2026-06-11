@@ -4,11 +4,12 @@ AI 家庭管家业务服务
 from __future__ import annotations
 
 import base64
+from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
 import random
 import secrets
-from typing import Iterable, Optional
+from typing import Iterable, Literal, Optional
 from uuid import UUID
 
 from cryptography.fernet import Fernet, InvalidToken
@@ -40,6 +41,15 @@ UNSAFE_WORDS = ("讨厌", "糟糕", "丑", "笨", "病", "死亡", "吓人", "�
 ENCRYPTED_KEY_PREFIX = "fernet:"
 DEFAULT_WIRE_API = "chat_completions"
 SUPPORTED_WIRE_APIS = {"chat_completions", "responses"}
+POST_CAPTION_MAX_LENGTH = 180
+
+
+@dataclass(frozen=True)
+class AIPostCaptionMediaInput:
+    filename: str
+    content_type: str
+    media_type: Literal["image", "video"]
+    data_url: Optional[str] = None
 
 
 def now_utc() -> datetime:
@@ -215,12 +225,16 @@ async def pick_auto_comment_persona(db: AsyncSession) -> Optional[AIPersona]:
     return random.choice(personas)
 
 
-def build_client(provider: AIProviderConfig) -> OpenAICompatibleClient:
+def build_client(
+    provider: AIProviderConfig,
+    *,
+    model: Optional[str] = None,
+) -> OpenAICompatibleClient:
     api_key = resolve_provider_api_key(provider)
     return OpenAICompatibleClient(
         base_url=provider.base_url,
         api_key=api_key,
-        model=provider.text_model,
+        model=model or provider.text_model,
         timeout_seconds=provider.timeout_seconds or settings.AI_REQUEST_TIMEOUT_SECONDS,
         wire_api=provider_wire_api(provider),
         reasoning_effort=provider_model_reasoning_effort(provider),
@@ -458,6 +472,148 @@ async def generate_ai_comment_for_post(db: AsyncSession, post_id: UUID) -> Optio
     provider.last_error = None
     await db.flush()
     return comment
+
+
+async def generate_post_caption(
+    db: AsyncSession,
+    *,
+    mode: Literal["polish", "generate"],
+    content: str,
+    media: list[AIPostCaptionMediaInput],
+) -> str:
+    provider = await get_provider(db)
+    if not provider_is_active(provider):
+        raise ValueError(AI_DISABLED_MESSAGE)
+
+    normalized_content = content.strip()
+    if not normalized_content and not media:
+        raise ValueError("请先写一点内容，或添加图片/视频")
+
+    model = provider.vision_model if media and provider.vision_model else provider.text_model
+    try:
+        client = build_client(provider, model=model)
+    except AIProviderError as error:
+        await pause_provider_for_error(db, provider, error)
+        raise
+
+    messages = build_post_caption_prompt(mode, normalized_content, media)
+    try:
+        result = await client.chat(messages, temperature=0.55, max_tokens=220)
+    except AIProviderError as error:
+        if _can_fallback_post_caption_to_text(media, error):
+            try:
+                fallback_client = build_client(provider, model=provider.text_model)
+                result = await fallback_client.chat(
+                    build_post_caption_prompt(
+                        mode,
+                        normalized_content,
+                        strip_post_caption_media_data(media),
+                    ),
+                    temperature=0.55,
+                    max_tokens=220,
+                )
+            except AIProviderError as fallback_error:
+                await pause_provider_for_error(db, provider, fallback_error)
+                raise fallback_error from error
+        else:
+            await pause_provider_for_error(db, provider, error)
+            raise
+
+    provider.failure_count = 0
+    provider.last_error = None
+    await db.flush()
+    return normalize_post_caption(result.content)
+
+
+def _can_fallback_post_caption_to_text(
+    media: list[AIPostCaptionMediaInput],
+    error: AIProviderError,
+) -> bool:
+    return bool(
+        media
+        and any(item.data_url for item in media)
+        and error.status_code not in {401, 402, 403, 429}
+    )
+
+
+def strip_post_caption_media_data(
+    media: list[AIPostCaptionMediaInput],
+) -> list[AIPostCaptionMediaInput]:
+    return [
+        AIPostCaptionMediaInput(
+            filename=item.filename,
+            content_type=item.content_type,
+            media_type=item.media_type,
+        )
+        for item in media
+    ]
+
+
+def build_post_caption_prompt(
+    mode: Literal["polish", "generate"],
+    content: str,
+    media: list[AIPostCaptionMediaInput],
+) -> list[dict[str, object]]:
+    system_prompt = (
+        "你是哪吒家庭私有时间线里的文案助手。"
+        "只为家庭成员生成中文文案，语气自然、温暖、像真实家人记录日常。"
+        "不要自称 AI 或大模型，不要写标签、Markdown、标题或解释。"
+        "不要凭空编造人物身份、地点、病情、隐私事实；看不确定的内容就用更稳妥的描述。"
+        f"只输出一段 {POST_CAPTION_MAX_LENGTH} 字以内的文案。"
+    )
+    media_lines = [
+        f"- {item.media_type}: {item.filename or '未命名媒体'} ({item.content_type or 'unknown'})"
+        for item in media
+    ]
+    if mode == "polish" and content:
+        task = (
+            "请润色下面这段家庭动态文案，保留原意和事实，让它更顺口、更温暖，"
+            "不要添加原文和媒体里没有的信息。"
+        )
+    else:
+        task = (
+            "请根据已选择的图片/视频，为这条家庭动态写一段可直接发布的文案。"
+            "如果只有视频元信息或看不清具体内容，就写得通用但真诚。"
+        )
+
+    text_prompt = "\n".join(
+        [
+            task,
+            "",
+            f"原文：{content or '无'}",
+            "媒体：",
+            "\n".join(media_lines) or "- 无",
+        ]
+    )
+    if not media:
+        return [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": text_prompt},
+        ]
+
+    user_content: list[dict[str, object]] = [{"type": "text", "text": text_prompt}]
+    for item in media:
+        if item.media_type == "image" and item.data_url:
+            user_content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": item.data_url},
+                }
+            )
+
+    return [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content},
+    ]
+
+
+def normalize_post_caption(content: str) -> str:
+    cleaned = " ".join(content.strip().strip('"“”`').split())
+    if len(cleaned) > POST_CAPTION_MAX_LENGTH:
+        cleaned = cleaned[:POST_CAPTION_MAX_LENGTH].rstrip("，。,. ")
+    if not cleaned:
+        raise AIProviderError("模型返回了空内容")
+    return cleaned
 
 
 async def build_post_context(db: AsyncSession, post: Post, author: Optional[User]) -> str:

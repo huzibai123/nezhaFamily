@@ -19,6 +19,7 @@ AIProviderStatus = Literal[
 AIJobStatus = Literal["pending", "running", "completed", "failed", "skipped"]
 AIProviderKeySource = Literal["database", "environment", "none"]
 AIProviderWireAPI = Literal["chat_completions", "responses"]
+AIPostCaptionMode = Literal["polish", "generate"]
 
 
 class AIProviderBase(BaseModel):
@@ -242,3 +243,9 @@ class AISearchResponse(BaseModel):
     query: str
     results: list[AISearchResponseItem]
     total: int
+
+
+class AIPostCaptionResponse(BaseModel):
+    content: str
+    mode: AIPostCaptionMode
+    used_media_count: int

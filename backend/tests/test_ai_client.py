@@ -113,6 +113,56 @@ async def test_client_does_not_duplicate_chat_completions_path(monkeypatch):
     assert posted_urls == ["https://api.example.com/v1/chat/completions"]
 
 
+async def test_client_preserves_multimodal_chat_completion_content(monkeypatch):
+    requests = []
+
+    class FakeResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def json(self):
+            return {"choices": [{"message": {"content": "OK"}}]}
+
+    class FakeAsyncClient:
+        def __init__(self, *, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def post(self, url, *args, **kwargs):
+            requests.append({"url": url, "kwargs": kwargs})
+            return FakeResponse()
+
+    monkeypatch.setattr(ai_client.httpx, "AsyncClient", FakeAsyncClient)
+    client = OpenAICompatibleClient(
+        base_url="https://api.example.com/v1",
+        api_key="secret",
+        model="gpt-compatible",
+        timeout_seconds=30,
+    )
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "给这张家庭照片写一条配文"},
+                {"type": "image_url", "image_url": {"url": "https://media.example.com/photo.jpg"}},
+            ],
+        }
+    ]
+
+    result = await client.chat(messages, temperature=0.4, max_tokens=80)
+
+    assert result.content == "OK"
+    payload = requests[0]["kwargs"]["json"]
+    assert payload["messages"] == messages
+    assert payload["temperature"] == 0.4
+    assert payload["max_tokens"] == 80
+
+
 async def test_client_supports_responses_api(monkeypatch):
     requests = []
 
@@ -174,6 +224,64 @@ async def test_client_supports_responses_api(monkeypatch):
     assert payload["reasoning"] == {"effort": "low"}
     assert payload["instructions"] == "Only say OK"
     assert payload["input"] == [{"role": "user", "content": "ping"}]
+
+
+async def test_client_preserves_multimodal_responses_content(monkeypatch):
+    requests = []
+
+    class FakeResponse:
+        status_code = 200
+        headers = {"content-type": "application/json"}
+
+        def json(self):
+            return {"output_text": "OK"}
+
+    class FakeAsyncClient:
+        def __init__(self, *, timeout):
+            self.timeout = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def post(self, url, *args, **kwargs):
+            requests.append({"url": url, "kwargs": kwargs})
+            return FakeResponse()
+
+    monkeypatch.setattr(ai_client.httpx, "AsyncClient", FakeAsyncClient)
+    client = OpenAICompatibleClient(
+        base_url="https://api.example.com/v1",
+        api_key="secret",
+        model="gpt-compatible",
+        timeout_seconds=30,
+        wire_api="responses",
+    )
+
+    await client.chat(
+        [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "给这张家庭照片写一条配文"},
+                    {"type": "image_url", "image_url": {"url": "https://media.example.com/photo.jpg"}},
+                ],
+            }
+        ],
+        max_tokens=80,
+    )
+
+    payload = requests[0]["kwargs"]["json"]
+    assert payload["input"] == [
+        {
+            "role": "user",
+            "content": [
+                {"type": "input_text", "text": "给这张家庭照片写一条配文"},
+                {"type": "input_image", "image_url": "https://media.example.com/photo.jpg"},
+            ],
+        }
+    ]
 
 
 async def test_client_retries_responses_without_unsupported_max_output_tokens(monkeypatch):

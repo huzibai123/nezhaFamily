@@ -153,24 +153,77 @@ def _result_from_content(content: Any, raw: dict[str, Any]) -> AIChatResult:
     return AIChatResult(content=content.strip(), raw=raw)
 
 
-def _messages_to_responses_payload(messages: list[dict[str, Any]]) -> tuple[str, list[dict[str, str]]]:
+def _messages_to_responses_payload(messages: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
     instructions: list[str] = []
-    input_items: list[dict[str, str]] = []
+    input_items: list[dict[str, Any]] = []
     for message in messages:
         role = str(message.get("role") or "user")
         content = message.get("content", "")
-        if isinstance(content, list):
-            text = "\n".join(str(part.get("text") or part) for part in content if part)
-        else:
-            text = str(content)
-        if not text.strip():
+        text = _text_from_content(content)
+        response_content = _responses_content(content)
+        if not text.strip() and not (
+            isinstance(response_content, list) and len(response_content) > 0
+        ):
             continue
         if role in {"system", "developer"}:
             instructions.append(text)
             continue
         input_role = role if role in {"user", "assistant"} else "user"
-        input_items.append({"role": input_role, "content": text})
+        input_items.append({"role": input_role, "content": response_content})
     return "\n\n".join(instructions), input_items
+
+
+def _text_from_content(content: Any) -> str:
+    if isinstance(content, list):
+        parts: list[str] = []
+        for part in content:
+            if not isinstance(part, dict):
+                parts.append(str(part))
+                continue
+            text = part.get("text")
+            if isinstance(text, str):
+                parts.append(text)
+        return "\n".join(part for part in parts if part.strip())
+    return str(content)
+
+
+def _responses_content(content: Any) -> str | list[dict[str, Any]]:
+    if not isinstance(content, list):
+        return str(content)
+
+    response_parts: list[dict[str, Any]] = []
+    for part in content:
+        if not isinstance(part, dict):
+            text = str(part)
+            if text.strip():
+                response_parts.append({"type": "input_text", "text": text})
+            continue
+
+        part_type = part.get("type")
+        if part_type in {"text", "input_text"}:
+            text = str(part.get("text") or "")
+            if text.strip():
+                response_parts.append({"type": "input_text", "text": text})
+            continue
+
+        if part_type == "image_url":
+            image_url = part.get("image_url")
+            if isinstance(image_url, dict):
+                image_url = image_url.get("url")
+            if isinstance(image_url, str) and image_url.strip():
+                response_parts.append({"type": "input_image", "image_url": image_url})
+            continue
+
+        if part_type == "input_image":
+            image_part: dict[str, Any] = {"type": "input_image"}
+            for key in ("image_url", "file_id"):
+                value = part.get(key)
+                if isinstance(value, str) and value.strip():
+                    image_part[key] = value
+            if len(image_part) > 1:
+                response_parts.append(image_part)
+
+    return response_parts or _text_from_content(content)
 
 
 def _extract_responses_content(data: dict[str, Any]) -> str:

@@ -5,7 +5,8 @@
         <div>
           <button
             @click="handleCancel"
-            class="soft-button mb-4 inline-flex rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)] hover:text-[var(--text)]"
+            :disabled="isBusy"
+            class="soft-button mb-4 inline-flex rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)] hover:text-[var(--text)] disabled:opacity-40"
             type="button"
           >
             取消
@@ -17,7 +18,7 @@
         </div>
         <button
           @click="handlePublish"
-          :disabled="!canPublish || publishing"
+          :disabled="!canPublish || isBusy"
           class="primary-button inline-flex rounded-lg bg-[var(--text)] px-5 py-2.5 text-sm font-medium text-[var(--surface)] active:scale-[0.98] disabled:opacity-30"
           type="button"
         >
@@ -28,15 +29,28 @@
 
     <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
       <section class="editor-panel rounded-lg border border-[var(--border)] bg-[var(--surface-card)] p-5 shadow-[var(--shadow-panel)]">
-        <label class="mb-3 block text-sm font-semibold text-[var(--text)]" for="post-content">
-          今天想留下什么？
-        </label>
+        <div class="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <label class="block text-sm font-semibold text-[var(--text)]" for="post-content">
+            今天想留下什么？
+          </label>
+          <button
+            @click="handleCaptionAI"
+            :disabled="!canUseCaptionAI || isBusy"
+            class="ai-caption-button inline-flex w-full min-w-0 items-center justify-center gap-2 rounded-lg border border-[color:rgb(45_108_104_/_0.24)] bg-[color:rgb(45_108_104_/_0.08)] px-3 py-2 text-sm font-medium text-[var(--accent-leaf)] hover:bg-[color:rgb(45_108_104_/_0.12)] disabled:opacity-45 sm:w-auto"
+            type="button"
+          >
+            <Loader2 v-if="aiGenerating" class="h-4 w-4 shrink-0 animate-spin" :stroke-width="2" aria-hidden="true" />
+            <Sparkles v-else class="h-4 w-4 shrink-0" :stroke-width="2" aria-hidden="true" />
+            <span class="min-w-0 truncate">{{ aiGenerating ? '生成中...' : aiCaptionButtonLabel }}</span>
+          </button>
+        </div>
         <textarea
           id="post-content"
           v-model="content"
           placeholder="分享家人的美好时刻..."
           rows="12"
-          class="editor-input min-h-[18rem] w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-4 text-base leading-7 text-[var(--text)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--border-focus)]"
+          :disabled="isBusy"
+          class="editor-input min-h-[18rem] w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-4 text-base leading-7 text-[var(--text)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--border-focus)] disabled:cursor-not-allowed disabled:opacity-60"
         />
 
         <p class="mt-3 text-xs leading-5 text-[var(--text-muted)]">
@@ -66,6 +80,7 @@
               <img v-else :src="preview" class="h-full w-full object-cover" alt="" />
               <button
                 @click="removeMedia(index)"
+                :disabled="isBusy"
                 class="absolute right-1.5 top-1.5 grid h-7 w-7 place-items-center rounded-lg bg-[color:rgb(75_40_25_/_0.58)] text-xs text-[var(--text-inverse)] transition-opacity hover:opacity-85"
                 type="button"
               >
@@ -74,7 +89,7 @@
               <div class="absolute bottom-1.5 left-1.5 flex gap-1">
                 <button
                   @click="moveMedia(index, -1)"
-                  :disabled="index === 0"
+                  :disabled="isBusy || index === 0"
                   class="preview-sort-button"
                   type="button"
                   aria-label="向前移动"
@@ -83,7 +98,7 @@
                 </button>
                 <button
                   @click="moveMedia(index, 1)"
-                  :disabled="index === previews.length - 1"
+                  :disabled="isBusy || index === previews.length - 1"
                   class="preview-sort-button"
                   type="button"
                   aria-label="向后移动"
@@ -97,12 +112,13 @@
           <button
             v-if="mediaFiles.length < 9"
             @click="triggerFileInput"
-            class="upload-dropzone grid w-full place-items-center rounded-lg border border-dashed border-[var(--border)] px-4 py-12 text-center text-sm text-[var(--text-muted)] hover:border-[var(--border-focus)] hover:bg-[var(--surface-elevated)] hover:text-[var(--text-secondary)]"
+            :disabled="isBusy"
+            class="upload-dropzone grid w-full place-items-center rounded-lg border border-dashed border-[var(--border)] px-4 py-12 text-center text-sm text-[var(--text-muted)] hover:border-[var(--border-focus)] hover:bg-[var(--surface-elevated)] hover:text-[var(--text-secondary)] disabled:opacity-45"
             type="button"
           >
             添加图片或视频
           </button>
-          <input ref="fileInput" type="file" accept="image/*,video/*" multiple class="hidden" @change="onFilesSelected" />
+          <input ref="fileInput" type="file" accept="image/*,video/*" multiple class="hidden" :disabled="isBusy" @change="onFilesSelected" />
 
           <div class="mt-4 rounded-lg border border-[var(--border)] bg-[var(--surface-card)] p-3">
             <label class="mb-2 block text-xs font-medium uppercase tracking-[0.12em] text-[var(--text-muted)]" for="target-album">
@@ -112,7 +128,7 @@
               id="target-album"
               v-model="selectedAlbumId"
               class="editor-input h-10 w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-3 text-sm text-[var(--text)] outline-none"
-              :disabled="albumsLoading || !albums.length"
+              :disabled="isBusy || albumsLoading || !albums.length"
             >
               <option value="">发布后不加入相册</option>
               <option v-for="album in albums" :key="album.id" :value="album.id">
@@ -145,6 +161,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import { Loader2, Sparkles } from 'lucide-vue-next'
+import { generatePostCaption, type PostCaptionMode } from '@/api/ai'
 import { createPost, type MediaItem } from '@/api/posts'
 import { getAlbums, type Album } from '@/api/albums'
 import { bulkMediaAction, uploadMedia } from '@/api/media'
@@ -154,6 +172,7 @@ import RightRail from '@/components/RightRail.vue'
 const router = useRouter()
 const content = ref('')
 const publishing = ref(false)
+const aiGenerating = ref(false)
 const errorMessage = ref('')
 const statusMessage = ref('')
 const fileInput = ref<HTMLInputElement>()
@@ -166,6 +185,10 @@ const selectedAlbumId = ref('')
 const albumsLoading = ref(false)
 
 const canPublish = computed(() => content.value.trim().length > 0 || mediaFiles.value.length > 0)
+const hasTextContent = computed(() => content.value.trim().length > 0)
+const canUseCaptionAI = computed(() => hasTextContent.value || mediaFiles.value.length > 0)
+const aiCaptionButtonLabel = computed(() => (hasTextContent.value ? '润色文案' : '帮我写文案'))
+const isBusy = computed(() => publishing.value || aiGenerating.value)
 const publishChecklist = computed(() => [
   {
     title: canPublish.value ? '可以发布' : '还没有内容',
@@ -191,10 +214,15 @@ onMounted(() => {
 })
 
 function triggerFileInput() {
+  if (isBusy.value) return
   fileInput.value?.click()
 }
 
 function onFilesSelected(event: Event) {
+  if (isBusy.value) {
+    ;(event.target as HTMLInputElement).value = ''
+    return
+  }
   const files = Array.from((event.target as HTMLInputElement).files || [])
   for (const file of files) {
     if (mediaFiles.value.length >= 9) break
@@ -209,6 +237,7 @@ function onFilesSelected(event: Event) {
 }
 
 function removeMedia(index: number) {
+  if (isBusy.value) return
   revokePreview(index)
   mediaFiles.value.splice(index, 1)
   previews.value.splice(index, 1)
@@ -217,6 +246,7 @@ function removeMedia(index: number) {
 }
 
 function moveMedia(index: number, direction: -1 | 1) {
+  if (isBusy.value) return
   const targetIndex = index + direction
   if (targetIndex < 0 || targetIndex >= mediaFiles.value.length) return
   swap(mediaFiles.value, index, targetIndex)
@@ -266,7 +296,7 @@ async function loadAlbums() {
 }
 
 async function handlePublish() {
-  if (!canPublish.value || publishing.value) return
+  if (!canPublish.value || isBusy.value) return
   publishing.value = true
   errorMessage.value = ''
   statusMessage.value = ''
@@ -310,7 +340,31 @@ async function handlePublish() {
   }
 }
 
+async function handleCaptionAI() {
+  if (!canUseCaptionAI.value || isBusy.value) return
+  const trimmed = content.value.trim()
+  const mode: PostCaptionMode = trimmed ? 'polish' : 'generate'
+
+  aiGenerating.value = true
+  errorMessage.value = ''
+  statusMessage.value = ''
+  try {
+    const response = await generatePostCaption({
+      mode,
+      content: trimmed || undefined,
+      files: mediaFiles.value,
+    })
+    content.value = response.content
+    statusMessage.value = response.mode === 'polish' ? '文案已润色' : '文案已生成'
+  } catch (e) {
+    errorMessage.value = typeof e === 'string' ? e : 'AI 文案生成失败'
+  } finally {
+    aiGenerating.value = false
+  }
+}
+
 function handleCancel() {
+  if (isBusy.value) return
   resetMediaState()
   router.back()
 }
@@ -322,6 +376,7 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .soft-button,
+.ai-caption-button,
 .primary-button,
 .editor-panel,
 .editor-input,
@@ -341,6 +396,7 @@ onBeforeUnmount(() => {
 }
 
 .soft-button:hover,
+.ai-caption-button:hover:not(:disabled),
 .primary-button:hover:not(:disabled) {
   transform: translateY(-1px);
 }
@@ -393,6 +449,7 @@ onBeforeUnmount(() => {
 
 @media (prefers-reduced-motion: reduce) {
   .soft-button,
+  .ai-caption-button,
   .primary-button,
   .editor-panel,
   .editor-input,
@@ -406,6 +463,7 @@ onBeforeUnmount(() => {
   }
 
   .soft-button:hover,
+  .ai-caption-button:hover:not(:disabled),
   .primary-button:hover:not(:disabled),
   .preview-tile:hover img,
   .preview-tile:hover video,

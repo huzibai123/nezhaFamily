@@ -22,6 +22,8 @@ function assertMatches(source, pattern, label) {
 const router = read('src/router/index.ts')
 const useAdminAI = read('src/views/admin-ai/useAdminAI.ts')
 const providerPage = read('src/views/admin-ai/AdminAIProvider.vue')
+const aiApi = read('src/api/ai.ts')
+const publishPage = read('src/views/PublishPage.vue')
 
 assertIncludes(router, "path: '/admin/ai'", 'AI parent route')
 assertIncludes(router, "name: 'AdminAI'", 'AI parent route')
@@ -80,5 +82,28 @@ assertIncludes(
 assertIncludes(providerPage, '清除后台 Key', 'Clear key button copy')
 assertIncludes(providerPage, 'value="responses"', 'Provider page exposes Responses wire API option')
 assertIncludes(providerPage, '关闭响应存储', 'Provider page exposes Responses storage toggle')
+
+assertIncludes(aiApi, "api.post('/ai/post-caption'", 'Post caption API endpoint')
+assertIncludes(aiApi, "formData.append('mode', payload.mode)", 'Post caption sends mode')
+assertIncludes(aiApi, "formData.append('content', trimmed)", 'Post caption sends trimmed content only')
+assertMatches(
+  aiApi,
+  /payload\.files\?\.forEach\(\(file\)\s*=>\s*formData\.append\('files\[\]',\s*file\)\)/,
+  'Post caption sends selected files as files[]'
+)
+assertIncludes(publishPage, 'generatePostCaption', 'Publish page calls post caption API')
+assertMatches(
+  publishPage,
+  /generatePostCaption\(\{[\s\S]*mode,[\s\S]*content:\s*trimmed\s*\|\|\s*undefined,[\s\S]*files:\s*mediaFiles\.value,[\s\S]*\}\)/,
+  'Publish page sends content and files to post caption API'
+)
+assertIncludes(publishPage, "'润色文案'", 'Publish page exposes polish label')
+assertIncludes(publishPage, "'帮我写文案'", 'Publish page exposes generate label')
+assertIncludes(publishPage, ':disabled="!canUseCaptionAI || isBusy"', 'Publish AI button is disabled while unavailable or busy')
+assertIncludes(
+  publishPage,
+  'await createPost(content.value.trim(), uploadedUrls.value)',
+  'Publish flow still uses normal createPost contract'
+)
 
 console.log('AI frontend contract check passed')

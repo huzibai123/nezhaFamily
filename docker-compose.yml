@@ -68,6 +68,21 @@ services:
         restart: "no"
         command: alembic upgrade head
 
+    # 初始化可写存储卷权限，避免 named volume 默认 root:root 导致上传 500
+    storage-permissions:
+        image: alpine:3.20
+        container_name: nezha-storage-permissions-dev
+        user: "0:0"
+        volumes:
+            - media_files:/app/media
+            - backup_files:/app/backups
+            - ./backend/logs:/app/logs
+        restart: "no"
+        command: >
+            sh -c "mkdir -p /app/media /app/backups /app/logs &&
+            chown -R 1000:1000 /app/media /app/backups /app/logs &&
+            chmod -R u+rwX,g+rwX /app/media /app/backups /app/logs"
+
     backend:
         build:
             context: ./backend
@@ -121,6 +136,8 @@ services:
         depends_on:
             migrate:
                 condition: service_completed_successfully
+            storage-permissions:
+                condition: service_completed_successfully
             redis:
                 condition: service_healthy
         healthcheck:
@@ -173,6 +190,8 @@ services:
             - nezha-network
         depends_on:
             migrate:
+                condition: service_completed_successfully
+            storage-permissions:
                 condition: service_completed_successfully
             redis:
                 condition: service_healthy

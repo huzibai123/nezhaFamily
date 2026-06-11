@@ -46,6 +46,56 @@ async def ai_comment_count(db: AsyncSession, post_id) -> int:
     return len(result.scalars().all())
 
 
+class CaptionFakeClient:
+    def __init__(self, content: str = "整理好的家庭配文") -> None:
+        self.content = content
+        self.calls = []
+
+    async def chat(self, messages, **kwargs):
+        self.calls.append({"messages": messages, "kwargs": kwargs})
+        return AIChatResult(content=self.content, raw={})
+
+
+def install_caption_client(monkeypatch, fake_client) -> None:
+    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider, **kwargs: fake_client)
+    monkeypatch.setattr(ai_api, "build_client", lambda provider, **kwargs: fake_client, raising=False)
+
+
+def caption_from_response(response) -> str | None:
+    data = response.json()
+    if isinstance(data, dict) and isinstance(data.get("data"), dict):
+        return data["data"].get("content") or data["data"].get("caption")
+    if isinstance(data, dict):
+        return data.get("content") or data.get("caption")
+    return None
+
+
+def flattened_message_text(messages) -> str:
+    parts: list[str] = []
+
+    def collect(value) -> None:
+        if isinstance(value, str):
+            parts.append(value)
+        elif isinstance(value, dict):
+            for item in value.values():
+                collect(item)
+        elif isinstance(value, list):
+            for item in value:
+                collect(item)
+
+    collect(messages)
+    return "\n".join(parts)
+
+
+def content_parts(messages) -> list[dict]:
+    parts: list[dict] = []
+    for message in messages:
+        content = message.get("content") if isinstance(message, dict) else None
+        if isinstance(content, list):
+            parts.extend([part for part in content if isinstance(part, dict)])
+    return parts
+
+
 async def test_ai_status_creates_default_provider_and_personas(
     client: AsyncClient,
     test_admin: User,
@@ -124,6 +174,219 @@ async def test_ai_search_requires_enabled_provider(
 
     assert response.status_code == 400
     assert "AI 管家尚未启用" in response.json()["detail"]
+
+
+async def test_post_caption_rejects_empty_content_and_files(
+    client: AsyncClient,
+    db: AsyncSession,
+    test_user: User,
+):
+    db.add(active_provider())
+    await db.commit()
+
+    response = await client.post(
+        "/api/v1/ai/post-caption",
+        data={"mode": "generate", "content": "   "},
+        headers=auth_headers(test_user),
+    )
+
+    assert response.status_code == 400
+    assert "内容" in response.json()["detail"]
+
+
+async def test_post_caption_member_can_polish_text(
+    client: AsyncClient,
+    db: AsyncSession,
+    test_user: User,
+    monkeypatch,
+):
+    provider = active_provider()
+    db.add(provider)
+    await db.commit()
+    fake_client = CaptionFakeClient("宝宝自己穿好鞋啦，今天又多了一点小独立。")
+    install_caption_client(monkeypatch, fake_client)
+
+    response = await client.post(
+        "/api/v1/ai/post-caption",
+        data={"mode": "polish", "content": "  宝宝今天第一次自己穿鞋  "},
+        headers=auth_headers(test_user),
+    )
+
+    assert response.status_code == 200
+    assert caption_from_response(response) == "宝宝自己穿好鞋啦，今天又多了一点小独立。"
+    assert len(fake_client.calls) == 1
+    assert "宝宝今天第一次自己穿鞋" in flattened_message_text(fake_client.calls[0]["messages"])
+    assert not any(
+        part.get("type") in {"image_url", "input_image"}
+        for part in content_parts(fake_client.calls[0]["messages"])
+    )
+
+
+async def test_post_caption_image_prompt_uses_multimodal_content(
+    client: AsyncClient,
+    db: AsyncSession,
+    test_user: User,
+    monkeypatch,
+):
+    provider = active_provider()
+    db.add(provider)
+    await db.commit()
+    fake_client = CaptionFakeClient("阳光下的小笑脸，像把今天都点亮了。")
+    install_caption_client(monkeypatch, fake_client)
+
+    response = await client.post(
+        "/api/v1/ai/post-caption",
+        data={"mode": "generate", "content": ""},
+        files={"files[]": ("photo.jpg", b"fake-image-bytes", "image/jpeg")},
+        headers=auth_headers(test_user),
+    )
+
+    assert response.status_code == 200
+    assert caption_from_response(response) == "阳光下的小笑脸，像把今天都点亮了。"
+    parts = content_parts(fake_client.calls[0]["messages"])
+    assert any(part.get("type") in {"image_url", "input_image"} for part in parts)
+    assert "data:image/jpeg;base64" in flattened_message_text(parts)
+
+
+async def test_post_caption_image_generation_falls_back_to_text_metadata(
+    client: AsyncClient,
+    db: AsyncSession,
+    test_user: User,
+    monkeypatch,
+):
+    provider = active_provider()
+    provider.vision_model = "vision-test"
+    db.add(provider)
+    await db.commit()
+    calls = []
+
+    class FallbackClient:
+        async def chat(self, messages, **kwargs):
+            calls.append({"messages": messages, "kwargs": kwargs})
+            if len(calls) == 1:
+                raise AIProviderError("vision unavailable", status_code=502)
+            return AIChatResult(content="一张值得收藏的家庭小照片。", raw={})
+
+    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider, **kwargs: FallbackClient())
+
+    response = await client.post(
+        "/api/v1/ai/post-caption",
+        data={"mode": "generate", "content": ""},
+        files={"files[]": ("photo.jpg", b"fake-image-bytes", "image/jpeg")},
+        headers=auth_headers(test_user),
+    )
+
+    assert response.status_code == 200
+    assert caption_from_response(response) == "一张值得收藏的家庭小照片。"
+    assert len(calls) == 2
+    assert any(part.get("type") in {"image_url", "input_image"} for part in content_parts(calls[0]["messages"]))
+    assert not any(
+        part.get("type") in {"image_url", "input_image"}
+        for part in content_parts(calls[1]["messages"])
+    )
+    assert "photo.jpg" in flattened_message_text(calls[1]["messages"])
+
+
+async def test_post_caption_video_prompt_uses_metadata_without_image_parts(
+    client: AsyncClient,
+    db: AsyncSession,
+    test_user: User,
+    monkeypatch,
+):
+    provider = active_provider()
+    db.add(provider)
+    await db.commit()
+    fake_client = CaptionFakeClient("一小段会反复回看的家庭视频。")
+    install_caption_client(monkeypatch, fake_client)
+
+    response = await client.post(
+        "/api/v1/ai/post-caption",
+        data={"mode": "polish", "content": "晚饭后的客厅"},
+        files={"files[]": ("clip.mp4", b"fake-video-bytes", "video/mp4")},
+        headers=auth_headers(test_user),
+    )
+
+    assert response.status_code == 200
+    assert caption_from_response(response) == "一小段会反复回看的家庭视频。"
+    text = flattened_message_text(fake_client.calls[0]["messages"])
+    parts = content_parts(fake_client.calls[0]["messages"])
+    assert "video" in text or "视频" in text
+    assert "clip.mp4" in text
+    assert not any(part.get("type") in {"image_url", "input_image"} for part in parts)
+
+
+@pytest.mark.parametrize(
+    ("status_code", "expected_status"),
+    [
+        (401, "paused_billing_or_auth"),
+        (402, "paused_billing_or_auth"),
+        (403, "paused_billing_or_auth"),
+        (429, "paused_rate_limit"),
+    ],
+)
+async def test_post_caption_provider_auth_billing_or_rate_errors_pause_and_notify(
+    client: AsyncClient,
+    db: AsyncSession,
+    test_admin: User,
+    test_user: User,
+    status_code: int,
+    expected_status: str,
+    monkeypatch,
+):
+    provider = active_provider()
+    db.add(provider)
+    await db.commit()
+    await db.refresh(provider)
+
+    class FailingClient:
+        async def chat(self, *args, **kwargs):
+            raise AIProviderError("模型不可用", status_code=status_code)
+
+    install_caption_client(monkeypatch, FailingClient())
+
+    response = await client.post(
+        "/api/v1/ai/post-caption",
+        data={"mode": "polish", "content": "帮这条家庭动态润色一下"},
+        headers=auth_headers(test_user),
+    )
+
+    assert response.status_code == 503
+    assert "模型不可用" in response.json()["detail"]
+    await db.refresh(provider)
+    assert provider.enabled is False
+    assert provider.status == expected_status
+    result = await db.execute(
+        select(Notification).where(
+            Notification.recipient_id == test_admin.id,
+            Notification.type == "ai_paused",
+            Notification.target_id == provider.id,
+        )
+    )
+    assert result.scalar_one_or_none() is not None
+
+
+async def test_post_caption_unavailable_provider_does_not_block_post_publish(
+    client: AsyncClient,
+    db: AsyncSession,
+    test_user: User,
+    monkeypatch,
+):
+    class UnexpectedClient:
+        async def chat(self, *args, **kwargs):
+            raise AssertionError("post publish should not call the caption client")
+
+    install_caption_client(monkeypatch, UnexpectedClient())
+
+    response = await client.post(
+        "/api/v1/posts",
+        json={"content": "普通发布接口继续可用", "media": []},
+        headers=auth_headers(test_user),
+    )
+
+    assert response.status_code == 201
+    assert response.json()["content"] == "普通发布接口继续可用"
+    result = await db.execute(select(Post).where(Post.content == "普通发布接口继续可用"))
+    assert result.scalar_one_or_none() is not None
 
 
 async def test_provider_connection_failure_pauses_and_notifies_admin(

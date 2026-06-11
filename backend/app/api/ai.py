@@ -1,9 +1,11 @@
 """
 AI 家庭管家 API
 """
+import base64
+from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,6 +37,7 @@ from app.schemas.ai import (
     AIProviderResponse,
     AIProviderTestResponse,
     AIProviderUpdate,
+    AIPostCaptionResponse,
     AIReportDraftResponse,
     AIReportGenerateRequest,
     AIReportUpdate,
@@ -44,6 +47,7 @@ from app.schemas.ai import (
 )
 from app.services.ai_housekeeper import (
     AI_DISABLED_MESSAGE,
+    AIPostCaptionMediaInput,
     create_album_suggestion_job,
     create_history_learning_job,
     create_system_user_for_persona,
@@ -52,6 +56,7 @@ from app.services.ai_housekeeper import (
     generate_report_draft,
     get_or_create_provider,
     get_provider,
+    generate_post_caption,
     mark_ai_job_failed,
     now_utc,
     provider_api_key_source,
@@ -64,10 +69,14 @@ from app.services.ai_housekeeper import (
     search_ai_memory,
     test_provider_connection,
 )
+from app.services.ai_client import AIProviderError
 from app.tasks.ai_housekeeper import run_ai_album_suggestions, run_ai_history_learning
 
 admin_router = APIRouter(prefix="/admin/ai")
 router = APIRouter(prefix="/ai")
+MAX_POST_CAPTION_FILES = 4
+MAX_POST_CAPTION_IMAGE_BYTES = 8 * 1024 * 1024
+POST_CAPTION_ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
 
 
 def provider_response(provider: AIProviderConfig) -> AIProviderResponse:
@@ -93,6 +102,67 @@ def provider_response(provider: AIProviderConfig) -> AIProviderResponse:
         created_at=provider.created_at,
         updated_at=provider.updated_at,
     )
+
+
+async def _post_caption_media_input(file: UploadFile) -> AIPostCaptionMediaInput | None:
+    content_type = (file.content_type or "").lower()
+    filename = file.filename or "media"
+    if content_type.startswith("image/"):
+        if content_type not in POST_CAPTION_ALLOWED_IMAGE_TYPES:
+            raise HTTPException(status_code=400, detail=f"不支持的图片类型: {content_type}")
+        data = await file.read(MAX_POST_CAPTION_IMAGE_BYTES + 1)
+        if len(data) > MAX_POST_CAPTION_IMAGE_BYTES:
+            raise HTTPException(status_code=400, detail="用于 AI 文案的图片不能超过 8MB")
+        if not data:
+            return None
+        return AIPostCaptionMediaInput(
+            filename=filename,
+            content_type=content_type,
+            media_type="image",
+            data_url=f"data:{content_type};base64,{base64.b64encode(data).decode('ascii')}",
+        )
+    if content_type.startswith("video/"):
+        return AIPostCaptionMediaInput(
+            filename=filename,
+            content_type=content_type,
+            media_type="video",
+        )
+    raise HTTPException(status_code=400, detail=f"不支持的媒体类型: {content_type or filename}")
+
+
+async def _post_caption_media_inputs(files: list[UploadFile]) -> list[AIPostCaptionMediaInput]:
+    media: list[AIPostCaptionMediaInput] = []
+    for file in files[:MAX_POST_CAPTION_FILES]:
+        item = await _post_caption_media_input(file)
+        if item:
+            media.append(item)
+    return media
+
+
+@router.post("/post-caption", response_model=AIPostCaptionResponse)
+async def create_ai_post_caption(
+    mode: Literal["polish", "generate"] = Form(...),
+    content: str = Form(""),
+    files: list[UploadFile] = File(default=[]),
+    files_bracket: list[UploadFile] = File(default=[], alias="files[]"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    media = await _post_caption_media_inputs([*(files or []), *(files_bracket or [])])
+    try:
+        caption = await generate_post_caption(
+            db,
+            mode=mode,
+            content=content,
+            media=media,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except AIProviderError as exc:
+        await db.commit()
+        raise HTTPException(status_code=503, detail=f"AI 文案暂时不可用：{exc}") from exc
+    await db.commit()
+    return AIPostCaptionResponse(content=caption, mode=mode, used_media_count=len(media))
 
 
 @admin_router.get("/status", response_model=AIStatusResponse)
