@@ -38,6 +38,8 @@ SAFE_COMMENT = "看到这条新的家庭记忆，心里也跟着亮了一下。�
 POSITIVE_WORDS = ("温暖", "可爱", "开心", "幸福", "珍贵", "美好", "喜欢", "收藏", "陪伴", "快乐")
 UNSAFE_WORDS = ("讨厌", "糟糕", "丑", "笨", "病", "死亡", "吓人", "隐私", "诊断")
 ENCRYPTED_KEY_PREFIX = "fernet:"
+DEFAULT_WIRE_API = "chat_completions"
+SUPPORTED_WIRE_APIS = {"chat_completions", "responses"}
 
 
 def now_utc() -> datetime:
@@ -79,6 +81,30 @@ def provider_api_key_source(provider: AIProviderConfig) -> str:
     if settings.AI_API_KEY:
         return "environment"
     return "none"
+
+
+def provider_settings(provider: AIProviderConfig) -> dict:
+    if isinstance(provider.settings, dict):
+        return dict(provider.settings)
+    return {}
+
+
+def provider_wire_api(provider: AIProviderConfig) -> str:
+    wire_api = provider_settings(provider).get("wire_api")
+    if wire_api in SUPPORTED_WIRE_APIS:
+        return wire_api
+    return DEFAULT_WIRE_API
+
+
+def provider_model_reasoning_effort(provider: AIProviderConfig) -> Optional[str]:
+    value = provider_settings(provider).get("model_reasoning_effort")
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return None
+
+
+def provider_disable_response_storage(provider: AIProviderConfig) -> bool:
+    return bool(provider_settings(provider).get("disable_response_storage", False))
 
 
 def provider_is_active(provider: Optional[AIProviderConfig]) -> bool:
@@ -196,6 +222,9 @@ def build_client(provider: AIProviderConfig) -> OpenAICompatibleClient:
         api_key=api_key,
         model=provider.text_model,
         timeout_seconds=provider.timeout_seconds or settings.AI_REQUEST_TIMEOUT_SECONDS,
+        wire_api=provider_wire_api(provider),
+        reasoning_effort=provider_model_reasoning_effort(provider),
+        disable_response_storage=provider_disable_response_storage(provider),
     )
 
 

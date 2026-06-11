@@ -6,6 +6,10 @@ import os
 
 from celery import Celery
 from app.core.config import settings
+from app.db.base import import_all_models
+
+
+import_all_models()
 
 
 def _env_int(name: str, default: int) -> int:

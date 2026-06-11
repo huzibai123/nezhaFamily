@@ -78,6 +78,9 @@ export const emptyProviderDraft = (): ProviderDraft => ({
   vision_model: '',
   timeout_seconds: 30,
   enabled: false,
+  wire_api: 'chat_completions',
+  model_reasoning_effort: '',
+  disable_response_storage: false,
 })
 
 export const emptyPersonaDraft = (): PersonaDraft => ({
@@ -193,6 +196,9 @@ export function provideAdminAI(): AdminAIContext {
       vision_model: provider?.vision_model || '',
       timeout_seconds: provider?.timeout_seconds || 30,
       enabled: Boolean(provider?.enabled),
+      wire_api: provider?.wire_api || 'chat_completions',
+      model_reasoning_effort: provider?.model_reasoning_effort || '',
+      disable_response_storage: Boolean(provider?.disable_response_storage),
     })
   }
 
@@ -254,6 +260,9 @@ export function provideAdminAI(): AdminAIContext {
       vision_model: providerDraft.vision_model?.trim() || null,
       timeout_seconds: clampNumber(providerDraft.timeout_seconds, 5, 120, 30),
       enabled: providerDraft.enabled,
+      wire_api: providerDraft.wire_api || 'chat_completions',
+      model_reasoning_effort: providerDraft.model_reasoning_effort?.trim() || null,
+      disable_response_storage: Boolean(providerDraft.disable_response_storage),
     }
     const apiKey = providerDraft.api_key.trim()
     if (apiKey) {

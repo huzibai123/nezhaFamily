@@ -55,8 +55,12 @@ from app.services.ai_housekeeper import (
     mark_ai_job_failed,
     now_utc,
     provider_api_key_source,
+    provider_disable_response_storage,
     provider_has_key,
     provider_is_active,
+    provider_model_reasoning_effort,
+    provider_settings,
+    provider_wire_api,
     search_ai_memory,
     test_provider_connection,
 )
@@ -78,6 +82,9 @@ def provider_response(provider: AIProviderConfig) -> AIProviderResponse:
         status=provider.status,
         has_api_key=provider_has_key(provider),
         api_key_source=provider_api_key_source(provider),
+        wire_api=provider_wire_api(provider),
+        model_reasoning_effort=provider_model_reasoning_effort(provider),
+        disable_response_storage=provider_disable_response_storage(provider),
         failure_count=provider.failure_count,
         last_error=provider.last_error,
         paused_reason=provider.paused_reason,
@@ -135,6 +142,14 @@ async def update_ai_provider(
         provider.api_key_encrypted = encrypt_ai_api_key(api_key)
     elif payload.clear_api_key:
         provider.api_key_encrypted = None
+    settings = provider_settings(provider)
+    settings["wire_api"] = payload.wire_api
+    if payload.model_reasoning_effort and payload.model_reasoning_effort.strip():
+        settings["model_reasoning_effort"] = payload.model_reasoning_effort.strip()
+    else:
+        settings.pop("model_reasoning_effort", None)
+    settings["disable_response_storage"] = payload.disable_response_storage
+    provider.settings = settings
     provider.status = "active" if provider.enabled and provider_has_key(provider) else "disabled"
     provider.failure_count = 0
     provider.last_error = None

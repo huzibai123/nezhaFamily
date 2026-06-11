@@ -18,6 +18,7 @@ AIProviderStatus = Literal[
 ]
 AIJobStatus = Literal["pending", "running", "completed", "failed", "skipped"]
 AIProviderKeySource = Literal["database", "environment", "none"]
+AIProviderWireAPI = Literal["chat_completions", "responses"]
 
 
 class AIProviderBase(BaseModel):
@@ -36,14 +37,19 @@ class AIProviderBase(BaseModel):
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("Base URL 必须是有效的 http/https 地址")
         path = parsed.path.rstrip("/")
-        if path.endswith("/chat/completions"):
-            path = path.removesuffix("/chat/completions").rstrip("/")
+        for suffix in ("/chat/completions", "/responses"):
+            if path.endswith(suffix):
+                path = path.removesuffix(suffix).rstrip("/")
+                break
         return urlunparse((parsed.scheme, parsed.netloc, path, "", "", ""))
 
 
 class AIProviderUpdate(AIProviderBase):
     api_key: Optional[str] = Field(None, max_length=5000)
     clear_api_key: bool = False
+    wire_api: AIProviderWireAPI = "chat_completions"
+    model_reasoning_effort: Optional[str] = Field(None, max_length=40)
+    disable_response_storage: bool = False
 
 
 class AIProviderResponse(AIProviderBase):
@@ -51,6 +57,9 @@ class AIProviderResponse(AIProviderBase):
     status: AIProviderStatus | str
     has_api_key: bool
     api_key_source: AIProviderKeySource
+    wire_api: AIProviderWireAPI
+    model_reasoning_effort: Optional[str] = None
+    disable_response_storage: bool
     failure_count: int
     last_error: Optional[str] = None
     paused_reason: Optional[str] = None

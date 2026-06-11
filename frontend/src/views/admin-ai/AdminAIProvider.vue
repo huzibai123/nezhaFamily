@@ -39,6 +39,13 @@
             <input v-model="providerDraft.base_url" class="ai-input" placeholder="https://api.openai.com/v1" />
           </label>
           <label class="ai-field">
+            <span>Wire API</span>
+            <select v-model="providerDraft.wire_api" class="ai-input">
+              <option value="chat_completions">Chat Completions</option>
+              <option value="responses">Responses</option>
+            </select>
+          </label>
+          <label class="ai-field">
             <span>Text model</span>
             <input v-model="providerDraft.text_model" class="ai-input" placeholder="deepseek-chat / gpt-4o-mini" />
           </label>
@@ -59,16 +66,29 @@
             <span>超时秒数</span>
             <input v-model.number="providerDraft.timeout_seconds" class="ai-input" max="120" min="5" type="number" />
           </label>
+          <label class="ai-field" v-if="providerDraft.wire_api === 'responses'">
+            <span>Reasoning effort</span>
+            <input v-model="providerDraft.model_reasoning_effort" class="ai-input" placeholder="可留空" />
+          </label>
         </div>
 
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <label class="ai-switch">
-            <input v-model="providerDraft.enabled" type="checkbox" />
-            <span class="ai-switch__track" aria-hidden="true">
-              <span class="ai-switch__thumb" />
-            </span>
-            <span>启用 AI 管家</span>
-          </label>
+          <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+            <label class="ai-switch">
+              <input v-model="providerDraft.enabled" type="checkbox" />
+              <span class="ai-switch__track" aria-hidden="true">
+                <span class="ai-switch__thumb" />
+              </span>
+              <span>启用 AI 管家</span>
+            </label>
+            <label class="ai-switch" v-if="providerDraft.wire_api === 'responses'">
+              <input v-model="providerDraft.disable_response_storage" type="checkbox" />
+              <span class="ai-switch__track" aria-hidden="true">
+                <span class="ai-switch__thumb" />
+              </span>
+              <span>关闭响应存储</span>
+            </label>
+          </div>
           <button
             @click="clearAIProviderKey"
             :disabled="!aiStateLoaded || loading || aiSavingProvider || aiTestingProvider || aiStatus?.provider?.api_key_source !== 'database'"
@@ -97,6 +117,10 @@
           <div class="flex items-center justify-between gap-4">
             <span class="text-[var(--text-muted)]">Key 来源</span>
             <span class="min-w-0 truncate font-medium text-[var(--text)]">{{ aiKeySourceLabel(aiStatus?.provider?.api_key_source) }}</span>
+          </div>
+          <div class="flex items-center justify-between gap-4">
+            <span class="text-[var(--text-muted)]">协议</span>
+            <span class="font-medium text-[var(--text)]">{{ providerDraft.wire_api === 'responses' ? 'Responses' : 'Chat' }}</span>
           </div>
           <div class="flex items-center justify-between gap-4">
             <span class="text-[var(--text-muted)]">超时</span>

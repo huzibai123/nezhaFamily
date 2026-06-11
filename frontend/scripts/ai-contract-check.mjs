@@ -61,6 +61,16 @@ assertMatches(
   /if \(providerDraft\.clear_api_key\) \{[\s\S]*payload\.clear_api_key = true[\s\S]*\}/,
   'Provider payload sends explicit clear_api_key'
 )
+assertIncludes(
+  useAdminAI,
+  "wire_api: providerDraft.wire_api || 'chat_completions'",
+  'Provider payload sends wire_api'
+)
+assertIncludes(
+  useAdminAI,
+  'disable_response_storage: Boolean(providerDraft.disable_response_storage)',
+  'Provider payload sends response storage setting'
+)
 
 assertIncludes(
   providerPage,
@@ -68,5 +78,7 @@ assertIncludes(
   'Clear key button only enabled for database key'
 )
 assertIncludes(providerPage, '清除后台 Key', 'Clear key button copy')
+assertIncludes(providerPage, 'value="responses"', 'Provider page exposes Responses wire API option')
+assertIncludes(providerPage, '关闭响应存储', 'Provider page exposes Responses storage toggle')
 
 console.log('AI frontend contract check passed')

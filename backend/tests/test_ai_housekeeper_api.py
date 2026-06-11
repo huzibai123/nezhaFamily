@@ -357,6 +357,58 @@ async def test_provider_response_reports_api_key_source(
     assert response.json()["provider"]["api_key_source"] == "database"
 
 
+async def test_provider_update_persists_wire_api_settings(
+    client: AsyncClient,
+    db: AsyncSession,
+    test_admin: User,
+):
+    provider = AIProviderConfig(
+        name="旧配置",
+        base_url="https://api.example.com/v1",
+        api_key_encrypted=ai_housekeeper.encrypt_ai_api_key("old-key"),
+        text_model="gpt-old",
+        enabled=True,
+        status="active",
+    )
+    db.add(provider)
+    await db.commit()
+
+    response = await client.put(
+        "/api/v1/admin/ai/providers/default",
+        json={
+            "name": "Responses 配置",
+            "base_url": "https://api.example.com/v1/responses",
+            "text_model": "gpt-new",
+            "vision_model": None,
+            "timeout_seconds": 60,
+            "enabled": True,
+            "wire_api": "responses",
+            "model_reasoning_effort": "low",
+            "disable_response_storage": True,
+        },
+        headers=auth_headers(test_admin),
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["base_url"] == "https://api.example.com/v1"
+    assert data["wire_api"] == "responses"
+    assert data["model_reasoning_effort"] == "low"
+    assert data["disable_response_storage"] is True
+
+    await db.refresh(provider)
+    assert provider.settings == {
+        "wire_api": "responses",
+        "model_reasoning_effort": "low",
+        "disable_response_storage": True,
+    }
+
+    built_client = ai_housekeeper.build_client(provider)
+    assert built_client.wire_api == "responses"
+    assert built_client.reasoning_effort == "low"
+    assert built_client.disable_response_storage is True
+
+
 async def test_disabled_provider_connection_success_does_not_enable(
     db: AsyncSession,
     monkeypatch,

@@ -4,10 +4,12 @@ OpenAI-compatible AI 客户端
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from urllib.parse import urlparse, urlunparse
 
 import httpx
+
+AIWireAPI = Literal["chat_completions", "responses"]
 
 
 class AIProviderError(Exception):
@@ -25,7 +27,7 @@ class AIChatResult:
 
 
 class OpenAICompatibleClient:
-    """最小 OpenAI-compatible chat completions 客户端。"""
+    """最小 OpenAI-compatible 客户端。"""
 
     def __init__(
         self,
@@ -34,11 +36,17 @@ class OpenAICompatibleClient:
         api_key: str,
         model: str,
         timeout_seconds: int,
+        wire_api: AIWireAPI = "chat_completions",
+        reasoning_effort: Optional[str] = None,
+        disable_response_storage: bool = False,
     ) -> None:
         self.base_url = _normalize_base_url(base_url)
         self.api_key = api_key
         self.model = model
         self.timeout_seconds = timeout_seconds
+        self.wire_api: AIWireAPI = wire_api if wire_api in {"chat_completions", "responses"} else "chat_completions"
+        self.reasoning_effort = reasoning_effort.strip() if isinstance(reasoning_effort, str) else None
+        self.disable_response_storage = disable_response_storage
 
     async def chat(
         self,
@@ -47,16 +55,76 @@ class OpenAICompatibleClient:
         temperature: float = 0.6,
         max_tokens: int = 300,
     ) -> AIChatResult:
+        if self.wire_api == "responses":
+            return await self._responses(messages, max_tokens=max_tokens)
+        return await self._chat_completions(messages, temperature=temperature, max_tokens=max_tokens)
+
+    async def _chat_completions(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        temperature: float,
+        max_tokens: int,
+    ) -> AIChatResult:
         url = f"{self.base_url}/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
         payload = {
             "model": self.model,
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
+        }
+        data = await self._post_json(url, payload)
+
+        try:
+            content = data["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise AIProviderError("模型响应格式不兼容") from exc
+
+        return _result_from_content(content, data)
+
+    async def _responses(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        max_tokens: int,
+    ) -> AIChatResult:
+        url = f"{self.base_url}/responses"
+        instructions, input_items = _messages_to_responses_payload(messages)
+        payload: dict[str, Any] = {
+            "model": self.model,
+            "input": input_items,
+            "max_output_tokens": max_tokens,
+        }
+        if instructions:
+            payload["instructions"] = instructions
+        if self.reasoning_effort:
+            payload["reasoning"] = {"effort": self.reasoning_effort}
+        if self.disable_response_storage:
+            payload["store"] = False
+
+        data = await self._post_json_with_responses_fallback(url, payload)
+        content = _extract_responses_content(data)
+        return _result_from_content(content, data)
+
+    async def _post_json_with_responses_fallback(
+        self,
+        url: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        try:
+            return await self._post_json(url, payload)
+        except AIProviderError as exc:
+            if exc.status_code != 400 or "max_output_tokens" not in str(exc):
+                raise
+            fallback_payload = dict(payload)
+            fallback_payload.pop("max_output_tokens", None)
+            return await self._post_json(url, fallback_payload)
+
+    async def _post_json(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
         }
 
         try:
@@ -72,19 +140,65 @@ class OpenAICompatibleClient:
             raise AIProviderError(message, status_code=response.status_code)
 
         try:
-            data = response.json()
+            return response.json()
         except ValueError as exc:
-            raise AIProviderError("模型响应不是有效 JSON") from exc
+            raise AIProviderError(_non_json_message(response), status_code=response.status_code) from exc
 
-        try:
-            content = data["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError) as exc:
-            raise AIProviderError("模型响应格式不兼容") from exc
 
-        if not isinstance(content, str) or not content.strip():
-            raise AIProviderError("模型返回了空内容")
+def _result_from_content(content: Any, raw: dict[str, Any]) -> AIChatResult:
+    if isinstance(content, list):
+        content = "\n".join(str(item) for item in content if item)
+    if not isinstance(content, str) or not content.strip():
+        raise AIProviderError("模型返回了空内容")
+    return AIChatResult(content=content.strip(), raw=raw)
 
-        return AIChatResult(content=content.strip(), raw=data)
+
+def _messages_to_responses_payload(messages: list[dict[str, Any]]) -> tuple[str, list[dict[str, str]]]:
+    instructions: list[str] = []
+    input_items: list[dict[str, str]] = []
+    for message in messages:
+        role = str(message.get("role") or "user")
+        content = message.get("content", "")
+        if isinstance(content, list):
+            text = "\n".join(str(part.get("text") or part) for part in content if part)
+        else:
+            text = str(content)
+        if not text.strip():
+            continue
+        if role in {"system", "developer"}:
+            instructions.append(text)
+            continue
+        input_role = role if role in {"user", "assistant"} else "user"
+        input_items.append({"role": input_role, "content": text})
+    return "\n\n".join(instructions), input_items
+
+
+def _extract_responses_content(data: dict[str, Any]) -> str:
+    output_text = data.get("output_text")
+    if isinstance(output_text, str) and output_text.strip():
+        return output_text
+
+    parts: list[str] = []
+    output_items = data.get("output")
+    if isinstance(output_items, list):
+        for output_item in output_items:
+            if not isinstance(output_item, dict):
+                continue
+            content_items = output_item.get("content")
+            if isinstance(content_items, list):
+                for content_item in content_items:
+                    if not isinstance(content_item, dict):
+                        continue
+                    text = content_item.get("text")
+                    if isinstance(text, str) and text.strip():
+                        parts.append(text)
+            text = output_item.get("text")
+            if isinstance(text, str) and text.strip():
+                parts.append(text)
+
+    if parts:
+        return "\n".join(parts)
+    raise AIProviderError("模型响应格式不兼容")
 
 
 def _extract_error_message(response: httpx.Response) -> str:
@@ -95,17 +209,43 @@ def _extract_error_message(response: httpx.Response) -> str:
             message = error.get("message") or error.get("code")
             if message:
                 return str(message)
-        if isinstance(data.get("message"), str):
-            return data["message"]
+        for key in ("message", "detail"):
+            if isinstance(data.get(key), str):
+                return data[key]
     except ValueError:
         pass
-    return f"模型服务返回 HTTP {response.status_code}"
+    content_type = _response_content_type(response)
+    text = getattr(response, "text", "")
+    if isinstance(text, str):
+        text = " ".join(text.split())[:160]
+    if text and "html" not in content_type.lower():
+        return f"模型服务返回 HTTP {response.status_code}: {text}"
+    suffix = f"（{content_type}）" if content_type else ""
+    return f"模型服务返回 HTTP {response.status_code}{suffix}"
+
+
+def _non_json_message(response: httpx.Response) -> str:
+    content_type = _response_content_type(response) or "unknown content-type"
+    message = f"模型响应不是有效 JSON（HTTP {response.status_code}，{content_type}）"
+    text = getattr(response, "text", "")
+    if isinstance(text, str) and "<html" in text.lower():
+        message += "。请检查 Base URL 是否缺少 /v1"
+    return message
+
+
+def _response_content_type(response: httpx.Response) -> str:
+    headers = getattr(response, "headers", {}) or {}
+    if hasattr(headers, "get"):
+        return str(headers.get("content-type") or headers.get("Content-Type") or "")
+    return ""
 
 
 def _normalize_base_url(value: str) -> str:
     cleaned = value.strip().rstrip("/")
     parsed = urlparse(cleaned)
     path = parsed.path.rstrip("/")
-    if path.endswith("/chat/completions"):
-        path = path.removesuffix("/chat/completions").rstrip("/")
+    for suffix in ("/chat/completions", "/responses"):
+        if path.endswith(suffix):
+            path = path.removesuffix(suffix).rstrip("/")
+            break
     return urlunparse((parsed.scheme, parsed.netloc, path, "", "", ""))

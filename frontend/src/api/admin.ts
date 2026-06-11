@@ -184,6 +184,9 @@ export interface AIProvider {
   status: AIProviderStatus
   has_api_key: boolean
   api_key_source?: string | null
+  wire_api: 'chat_completions' | 'responses'
+  model_reasoning_effort?: string | null
+  disable_response_storage: boolean
   failure_count: number
   last_error?: string | null
   paused_reason?: string | null
@@ -202,6 +205,9 @@ export interface AIProviderUpdate {
   vision_model?: string | null
   timeout_seconds: number
   enabled: boolean
+  wire_api: 'chat_completions' | 'responses'
+  model_reasoning_effort?: string | null
+  disable_response_storage: boolean
 }
 
 export interface AIProviderTestResponse {

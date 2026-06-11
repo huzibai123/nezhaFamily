@@ -2,6 +2,10 @@
 Celery 任务运行时配置测试。
 """
 
+import subprocess
+import sys
+from pathlib import Path
+
 from app.tasks import (
     AI_TASK_OPTIONS,
     AI_TASK_SOFT_TIME_LIMIT_SECONDS,
@@ -38,3 +42,24 @@ def test_ai_task_defaults_disable_auto_retry_but_keep_timeouts():
     assert AI_TASK_OPTIONS["retry_backoff"] is False
     assert AI_TASK_OPTIONS["time_limit"] == AI_TASK_TIME_LIMIT_SECONDS
     assert AI_TASK_OPTIONS["soft_time_limit"] == AI_TASK_SOFT_TIME_LIMIT_SECONDS
+
+
+def test_celery_worker_import_registers_all_model_relationships():
+    script = """
+from sqlalchemy.orm import configure_mappers
+import app.tasks
+
+configure_mappers()
+print("mappers-ok")
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        check=False,
+        cwd=Path(__file__).resolve().parents[1],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "mappers-ok" in result.stdout
