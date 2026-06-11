@@ -1,14 +1,18 @@
 """
 AI 家庭管家 API 与服务测试
 """
+import asyncio
+import base64
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api import ai as ai_api
+from app.core import media_utils
 from app.core.security import create_access_token
 from app.models.ai import AIAlbumSuggestion, AIJob, AIProviderConfig, AIReportDraft, AIPersona
 from app.models.album import Album
@@ -19,6 +23,7 @@ from app.models.post import Post
 from app.models.user import User
 from app.services import ai_housekeeper
 from app.services.ai_client import AIChatResult, AIProviderError
+from app.tasks import ai_housekeeper as ai_tasks
 
 
 def auth_headers(user: User) -> dict[str, str]:
@@ -410,7 +415,7 @@ async def test_provider_connection_failure_pauses_and_notifies_admin(
         async def chat(self, *args, **kwargs):
             raise AIProviderError("余额不足", status_code=402)
 
-    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider: FailingClient())
+    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider, **kwargs: FailingClient())
 
     ok, message = await ai_housekeeper.test_provider_connection(db, provider)
     await db.commit()
@@ -447,7 +452,7 @@ async def test_disabled_provider_connection_failure_only_records_error(
         async def chat(self, *args, **kwargs):
             raise AIProviderError("鉴权失败", status_code=401)
 
-    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider: FailingClient())
+    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider, **kwargs: FailingClient())
 
     ok, message = await ai_housekeeper.test_provider_connection(db, provider)
     await db.commit()
@@ -691,7 +696,7 @@ async def test_disabled_provider_connection_success_does_not_enable(
         async def chat(self, *args, **kwargs):
             return AIChatResult(content="OK", raw={})
 
-    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider: FakeClient())
+    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider, **kwargs: FakeClient())
 
     ok, message = await ai_housekeeper.test_provider_connection(db, provider)
     await db.commit()
@@ -748,7 +753,7 @@ async def test_provider_save_then_mock_test_success_and_resets_paused_error(
         async def chat(self, *args, **kwargs):
             return AIChatResult(content="OK", raw={})
 
-    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider: FakeClient())
+    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider, **kwargs: FakeClient())
 
     test_response = await client.post(
         "/api/v1/admin/ai/providers/default/test",
@@ -809,7 +814,7 @@ async def test_generate_ai_comment_creates_positive_comment(
         async def chat(self, *args, **kwargs):
             return AIChatResult(content="太珍贵啦，这一步真是温暖又开心！", raw={})
 
-    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider: FakeClient())
+    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider, **kwargs: FakeClient())
 
     comment = await ai_housekeeper.generate_ai_comment_for_post(db, post.id)
     await db.commit()
@@ -818,6 +823,199 @@ async def test_generate_ai_comment_creates_positive_comment(
     assert comment.is_ai_generated is True
     assert comment.ai_persona_id is not None
     assert "温暖" in comment.content or "开心" in comment.content
+
+
+async def test_generate_ai_comment_rewrites_off_context_token_joke(
+    db: AsyncSession,
+    test_user: User,
+    monkeypatch,
+):
+    """帖子说烧 token 时，自动评论不能脑补成烧烤/烤肉。"""
+    provider = active_provider()
+    post = Post(author_id=test_user.id, content="今天天气不错。团建ing，开心烧token", media_urls=[])
+    db.add_all([provider, post])
+    await db.commit()
+    await db.refresh(post)
+    await ai_housekeeper.ensure_default_personas(db)
+    await db.commit()
+
+    class FakeClient:
+        calls: list[list[dict[str, object]]] = []
+
+        async def chat(self, messages, **kwargs):
+            self.calls.append(messages)
+            if len(self.calls) == 1:
+                return AIChatResult(content="哇！阳光下的烤肉好香呀！我也想吃！", raw={})
+            return AIChatResult(content="天气好又能一起团建，真开心呀！", raw={})
+
+    fake_client = FakeClient()
+    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider, **kwargs: fake_client)
+
+    comment = await ai_housekeeper.generate_ai_comment_for_post(db, post.id)
+    await db.commit()
+
+    assert comment is not None
+    assert "烤肉" not in comment.content
+    assert "想吃" not in comment.content
+    assert "团建" in comment.content or "开心" in comment.content
+    assert len(fake_client.calls) == 2
+    retry_text = flattened_message_text(fake_client.calls[1])
+    assert "上一版不够合适" in retry_text
+
+
+async def test_generate_ai_comment_uses_image_input_when_vision_model_configured(
+    db: AsyncSession,
+    tmp_path: Path,
+    test_user: User,
+    monkeypatch,
+):
+    """有图片且配置视觉模型时，自动评论会把图片作为视觉输入传给模型。"""
+    media_root = tmp_path / "media"
+    media_root.mkdir()
+    image_path = media_root / "sunny.png"
+    image_path.write_bytes(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/axY4pUAAAAASUVORK5CYII="))
+    monkeypatch.setattr(media_utils, "MEDIA_ROOT", media_root)
+
+    provider = active_provider()
+    provider.vision_model = "vision-test"
+    post = Post(
+        author_id=test_user.id,
+        content="今天在院子里晒太阳",
+        media_urls=[{"type": "image", "url": "/media/sunny.png"}],
+    )
+    db.add_all([provider, post])
+    await db.commit()
+    await db.refresh(post)
+    await ai_housekeeper.ensure_default_personas(db)
+    await db.commit()
+
+    class FakeClient:
+        calls: list[dict[str, object]] = []
+
+        async def chat(self, messages, **kwargs):
+            self.calls.append({"messages": messages, "kwargs": kwargs})
+            return AIChatResult(content="阳光里的这一刻真温暖呀！", raw={})
+
+    fake_client = FakeClient()
+    built_models: list[str | None] = []
+
+    def fake_build_client(provider, **kwargs):
+        built_models.append(kwargs.get("model"))
+        return fake_client
+
+    monkeypatch.setattr(ai_housekeeper, "build_client", fake_build_client)
+
+    comment = await ai_housekeeper.generate_ai_comment_for_post(db, post.id)
+    await db.commit()
+
+    assert comment is not None
+    assert built_models == ["vision-test"]
+    parts = content_parts(fake_client.calls[0]["messages"])
+    assert any(part.get("type") in {"image_url", "input_image"} for part in parts)
+    assert "data:image/png;base64" in flattened_message_text(parts)
+    assert comment.ai_generation_metadata["used_visual_inputs"] is True
+
+
+async def test_generate_ai_comment_does_not_send_image_to_text_model(
+    db: AsyncSession,
+    tmp_path: Path,
+    test_user: User,
+    monkeypatch,
+):
+    """没有配置视觉模型时，有图帖子也只走文本安全降级，不把图片块发给文本模型。"""
+    media_root = tmp_path / "media"
+    media_root.mkdir()
+    image_path = media_root / "sunny.png"
+    image_path.write_bytes(
+        base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMB/axY4pUAAAAASUVORK5CYII="
+        )
+    )
+    monkeypatch.setattr(media_utils, "MEDIA_ROOT", media_root)
+
+    provider = active_provider()
+    provider.vision_model = None
+    post = Post(
+        author_id=test_user.id,
+        content="今天在院子里晒太阳",
+        media_urls=[{"type": "image", "url": "/media/sunny.png"}],
+    )
+    db.add_all([provider, post])
+    await db.commit()
+    await db.refresh(post)
+    await ai_housekeeper.ensure_default_personas(db)
+    await db.commit()
+
+    class FakeClient:
+        calls: list[dict[str, object]] = []
+
+        async def chat(self, messages, **kwargs):
+            self.calls.append({"messages": messages, "kwargs": kwargs})
+            return AIChatResult(content="这段阳光里的记录真温暖呀！", raw={})
+
+    fake_client = FakeClient()
+    built_models: list[str | None] = []
+
+    def fake_build_client(provider, **kwargs):
+        built_models.append(kwargs.get("model"))
+        return fake_client
+
+    monkeypatch.setattr(ai_housekeeper, "build_client", fake_build_client)
+
+    comment = await ai_housekeeper.generate_ai_comment_for_post(db, post.id)
+    await db.commit()
+
+    assert comment is not None
+    assert built_models == ["gpt-test"]
+    parts = content_parts(fake_client.calls[0]["messages"])
+    assert not any(part.get("type") in {"image_url", "input_image"} for part in parts)
+    prompt_text = flattened_message_text(fake_client.calls[0]["messages"])
+    assert "未提供可看的图片内容" in prompt_text
+    assert comment.ai_generation_metadata["used_visual_inputs"] is False
+
+
+async def test_generate_ai_comment_task_creates_comment_across_event_loops(
+    db: AsyncSession,
+    test_engine,
+    test_user: User,
+    monkeypatch,
+):
+    """Celery AI 评论任务可连续执行，不复用跨事件循环的 asyncpg 连接。"""
+    monkeypatch.setattr(
+        ai_tasks.settings,
+        "DATABASE_URL",
+        test_engine.url.render_as_string(hide_password=False),
+    )
+    provider = active_provider()
+    first_post = Post(author_id=test_user.id, content="今天一起做了早餐", media_urls=[])
+    second_post = Post(author_id=test_user.id, content="傍晚一起散步看云", media_urls=[])
+    db.add_all([provider, first_post, second_post])
+    await db.commit()
+    await db.refresh(first_post)
+    await db.refresh(second_post)
+    await ai_housekeeper.ensure_default_personas(db)
+    await db.commit()
+
+    class FakeClient:
+        async def chat(self, *args, **kwargs):
+            return AIChatResult(content="这一刻真的很温暖，值得好好记下来！", raw={})
+
+    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider, **kwargs: FakeClient())
+
+    first_result = await asyncio.to_thread(ai_tasks.generate_ai_comment.run, str(first_post.id))
+    second_result = await asyncio.to_thread(ai_tasks.generate_ai_comment.run, str(second_post.id))
+
+    assert first_result["created"] is True
+    assert second_result["created"] is True
+
+    TaskTestSession = async_sessionmaker(
+        test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    async with TaskTestSession() as verify_db:
+        assert await ai_comment_count(verify_db, first_post.id) == 1
+        assert await ai_comment_count(verify_db, second_post.id) == 1
 
 
 @pytest.mark.parametrize(
@@ -847,7 +1045,7 @@ async def test_generate_ai_comment_skips_when_ai_off_or_paused(
         async def chat(self, *args, **kwargs):
             raise AssertionError("AI client should not be called")
 
-    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider: UnexpectedClient())
+    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider, **kwargs: UnexpectedClient())
 
     comment = await ai_housekeeper.generate_ai_comment_for_post(db, post.id)
     await db.commit()
@@ -875,7 +1073,7 @@ async def test_generate_ai_comment_skips_when_all_auto_comment_personas_disabled
         async def chat(self, *args, **kwargs):
             raise AssertionError("AI client should not be called")
 
-    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider: UnexpectedClient())
+    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider, **kwargs: UnexpectedClient())
 
     comment = await ai_housekeeper.generate_ai_comment_for_post(db, post.id)
     await db.commit()
@@ -905,7 +1103,7 @@ async def test_generate_ai_comment_is_idempotent_per_post(
             return AIChatResult(content=f"第{self.calls}次也很温暖！", raw={})
 
     fake_client = FakeClient()
-    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider: fake_client)
+    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider, **kwargs: fake_client)
 
     first = await ai_housekeeper.generate_ai_comment_for_post(db, post.id)
     await db.commit()
@@ -948,7 +1146,7 @@ async def test_generate_ai_comment_provider_auth_billing_or_rate_errors_pause_an
         async def chat(self, *args, **kwargs):
             raise AIProviderError("模型不可用", status_code=status_code)
 
-    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider: FailingClient())
+    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider, **kwargs: FailingClient())
 
     comment = await ai_housekeeper.generate_ai_comment_for_post(db, post.id)
     await db.commit()

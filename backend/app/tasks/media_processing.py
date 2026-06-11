@@ -14,6 +14,7 @@ from sqlalchemy import Column, DateTime, MetaData, String, Table, delete, select
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
 from app.core.media_utils import MEDIA_ROOT, media_path_from_url
@@ -42,8 +43,10 @@ _media_files_cleanup_table = Table(
     Column("deleted_at", DateTime(timezone=True), nullable=True),
 )
 
-# 为 Celery 任务创建独立的异步引擎和 session 工厂
-task_engine = create_async_engine(DATABASE_URL, echo=False, future=True)
+# Celery 任务会在同步 worker 里为每次异步 DB 操作创建短生命周期 event loop。
+# asyncpg 连接不能跨 event loop 复用，因此任务侧禁用连接池，避免媒体处理偶发
+# “Future attached to a different loop”。
+task_engine = create_async_engine(DATABASE_URL, echo=False, future=True, poolclass=NullPool)
 TaskAsyncSession = async_sessionmaker(
     task_engine,
     class_=AsyncSession,

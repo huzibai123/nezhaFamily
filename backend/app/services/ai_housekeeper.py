@@ -7,8 +7,10 @@ import base64
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
+import mimetypes
 import random
 import secrets
+from pathlib import Path
 from typing import Iterable, Literal, Optional
 from uuid import UUID
 
@@ -17,6 +19,7 @@ from sqlalchemy import String, desc, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.core.media_utils import media_path_from_url, media_storage_path
 from app.core.security import get_password_hash
 from app.models.ai import (
     AIAlbumSuggestion,
@@ -38,10 +41,14 @@ AI_DISABLED_MESSAGE = "AI 管家尚未启用"
 SAFE_COMMENT = "看到这条新的家庭记忆，心里也跟着亮了一下。愿这些温柔的小瞬间被好好收藏。"
 POSITIVE_WORDS = ("温暖", "可爱", "开心", "幸福", "珍贵", "美好", "喜欢", "收藏", "陪伴", "快乐")
 UNSAFE_WORDS = ("讨厌", "糟糕", "丑", "笨", "病", "死亡", "吓人", "隐私", "诊断")
+OFF_CONTEXT_FOOD_WORDS = ("烤肉", "烧烤", "肉香", "好香", "想吃", "开吃", "馋")
+TOKEN_CONTEXT_WORDS = ("token", "Token", "TOKEN", "烧token", "烧 token", "烧Token", "烧 Token")
 ENCRYPTED_KEY_PREFIX = "fernet:"
 DEFAULT_WIRE_API = "chat_completions"
 SUPPORTED_WIRE_APIS = {"chat_completions", "responses"}
 POST_CAPTION_MAX_LENGTH = 180
+AI_COMMENT_MAX_IMAGES = 2
+AI_COMMENT_MAX_IMAGE_BYTES = 2 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -50,6 +57,31 @@ class AIPostCaptionMediaInput:
     content_type: str
     media_type: Literal["image", "video"]
     data_url: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class AICommentMediaContext:
+    media_type: str
+    url: str
+    filename: str
+    content_type: str
+    data_url: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class AICommentContext:
+    author_label: str
+    text: str
+    media: list[AICommentMediaContext]
+    profile_text: str
+
+    @property
+    def has_images(self) -> bool:
+        return any(item.media_type == "image" for item in self.media)
+
+    @property
+    def has_visual_inputs(self) -> bool:
+        return any(item.data_url for item in self.media)
 
 
 def now_utc() -> datetime:
@@ -423,12 +455,13 @@ async def generate_ai_comment_for_post(db: AsyncSession, post_id: UUID) -> Optio
         return None
 
     author = await db.get(User, post.author_id)
+    context = await build_post_context(db, post, author, include_image_data=bool(provider.vision_model))
+    comment_model = provider.vision_model if context.has_visual_inputs else provider.text_model
     try:
-        client = build_client(provider)
+        client = build_client(provider, model=comment_model)
     except AIProviderError as error:
         await pause_provider_for_error(db, provider, error)
         return None
-    context = await build_post_context(db, post, author)
     comment_text = SAFE_COMMENT
     attempts: list[dict[str, str | int | bool]] = []
 
@@ -444,7 +477,7 @@ async def generate_ai_comment_for_post(db: AsyncSession, post_id: UUID) -> Optio
             return None
 
         candidate = normalize_comment(result.content)
-        ok, reason = validate_positive_comment(candidate)
+        ok, reason = validate_positive_comment(candidate, context)
         attempts.append({"attempt": attempt, "ok": ok, "reason": reason, "content": candidate})
         if ok:
             comment_text = candidate
@@ -461,9 +494,10 @@ async def generate_ai_comment_for_post(db: AsyncSession, post_id: UUID) -> Optio
         ai_persona_id=persona.id,
         ai_generation_metadata={
             "provider_id": str(provider.id),
-            "model": provider.text_model,
+            "model": comment_model,
             "attempts": attempts,
             "fallback": comment_text == SAFE_COMMENT,
+            "used_visual_inputs": context.has_visual_inputs,
         },
     )
     db.add(comment)
@@ -616,47 +650,141 @@ def normalize_post_caption(content: str) -> str:
     return cleaned
 
 
-async def build_post_context(db: AsyncSession, post: Post, author: Optional[User]) -> str:
-    media_lines = []
+async def build_post_context(
+    db: AsyncSession,
+    post: Post,
+    author: Optional[User],
+    *,
+    include_image_data: bool = True,
+) -> AICommentContext:
     media_items = post.media_urls or []
-    for item in media_items[:5]:
-        if isinstance(item, dict):
-            media_lines.append(f"- {item.get('type', 'media')}: {item.get('url', '')}")
-
+    media_context = [
+        item for item in build_comment_media_context(media_items, include_image_data=include_image_data) if item
+    ]
     recent_profiles = await db.execute(select(AIProfile).order_by(desc(AIProfile.updated_at)).limit(5))
     profile_text = "\n".join(
         f"- {profile.title}: {profile.summary or profile.editable_notes or ''}"
         for profile in recent_profiles.scalars().all()
     )
+    return AICommentContext(
+        author_label=author.role_in_family or author.username if author else "家人",
+        text=post.content or "",
+        media=media_context,
+        profile_text=profile_text,
+    )
+
+
+def build_comment_media_context(
+    media_items: list[object],
+    *,
+    include_image_data: bool = True,
+) -> list[AICommentMediaContext]:
+    contexts: list[AICommentMediaContext] = []
+    image_data_count = 0
+    for item in media_items[:5]:
+        if not isinstance(item, dict):
+            continue
+        media_type = str(item.get("type") or "media")
+        url = str(item.get("url") or "")
+        filename = Path(media_path_from_url(url)).name if url else ""
+        content_type = guess_media_content_type(url, media_type)
+        data_url: Optional[str] = None
+        if include_image_data and media_type == "image" and image_data_count < AI_COMMENT_MAX_IMAGES:
+            data_url = load_comment_image_data_url(url, content_type)
+            if data_url:
+                image_data_count += 1
+        contexts.append(
+            AICommentMediaContext(
+                media_type=media_type,
+                url=url,
+                filename=filename or "未命名媒体",
+                content_type=content_type,
+                data_url=data_url,
+            )
+        )
+    return contexts
+
+
+def guess_media_content_type(url: str, media_type: str) -> str:
+    guessed_type, _ = mimetypes.guess_type(media_path_from_url(url))
+    if guessed_type:
+        return guessed_type
+    if media_type == "image":
+        return "image/jpeg"
+    if media_type == "video":
+        return "video/mp4"
+    return "application/octet-stream"
+
+
+def load_comment_image_data_url(url: str, content_type: str) -> Optional[str]:
+    if not url:
+        return None
+    try:
+        image_path = media_storage_path(media_path_from_url(url))
+        if not image_path.is_file() or image_path.stat().st_size > AI_COMMENT_MAX_IMAGE_BYTES:
+            return None
+        data = image_path.read_bytes()
+    except (OSError, ValueError):
+        return None
+    return f"data:{content_type};base64,{base64.b64encode(data).decode('ascii')}"
+
+
+def comment_context_text(context: AICommentContext) -> str:
+    media_lines = [
+        f"- {item.media_type}: {item.filename} ({item.content_type})"
+        for item in context.media
+    ]
+    visual_note = (
+        "已附带图片视觉输入，请只评论你能从图片和文案中确认的内容。"
+        if context.has_visual_inputs
+        else (
+            "未提供可看的图片内容；不要猜测图片里有什么，只能依据文字和媒体类型做通用正向回应。"
+            if context.has_images
+            else "无图片视觉输入。"
+        )
+    )
     return "\n".join(
         [
-            f"作者：{author.role_in_family or author.username if author else '家人'}",
-            f"帖子文字：{post.content or '无文字说明'}",
+            f"作者：{context.author_label}",
+            f"帖子文字：{context.text.strip() or '无文字说明'}",
             "媒体：",
             "\n".join(media_lines) or "- 无媒体",
+            f"视觉说明：{visual_note}",
             "已有家庭画像摘要：",
-            profile_text or "- 暂无",
+            context.profile_text or "- 暂无",
         ]
     )
 
 
 def build_comment_prompt(
     persona: AIPersona,
-    context: str,
+    context: AICommentContext,
     previous_comment: Optional[str],
-) -> list[dict[str, str]]:
+) -> list[dict[str, object]]:
     system_prompt = (
         f"你是家庭私有平台里的 AI 角色「{persona.name}」。"
         f"你的性格/语气：{persona.tone or '温暖、真诚、简短'}。"
-        "你要为家人的新帖子写一条正向评论。"
+        "你要为家人的新帖子写一条正向评论。必须贴合事实，宁可朴素也不要脑补。"
+        "如果帖子没有图片，只能根据帖子文字评论；如果有图片且提供视觉输入，可以结合图片中明确可见的内容评论；"
+        "如果只有视频或图片不可见，只能写通用正向回应，不描述具体画面。"
+        "不要把网络梗、技术词或比喻当成真实事件，例如“烧 token/烧钱/烧卡”不能解读成烧烤、烤肉或食物。"
         "要求：中文，30字以内，真诚、具体、积极，不要批评、诊断、吓人、泄露隐私，不要自称大模型。"
     )
-    user_prompt = f"帖子上下文：\n{context}\n\n请写一条评论。"
+    user_prompt = f"帖子上下文：\n{comment_context_text(context)}\n\n请写一条评论。"
     if previous_comment:
         user_prompt += f"\n上一版不够合适：{previous_comment}\n请重新写得更自然、更正向。"
+    if not context.has_visual_inputs:
+        return [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+    user_content: list[dict[str, object]] = [{"type": "text", "text": user_prompt}]
+    for item in context.media:
+        if item.data_url:
+            user_content.append({"type": "image_url", "image_url": {"url": item.data_url}})
     return [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt},
+        {"role": "user", "content": user_content},
     ]
 
 
@@ -665,16 +793,34 @@ def normalize_comment(content: str) -> str:
     return " ".join(content.split())[:120]
 
 
-def validate_positive_comment(content: str) -> tuple[bool, str]:
+def validate_positive_comment(
+    content: str,
+    context: Optional[AICommentContext] = None,
+) -> tuple[bool, str]:
     if not content:
         return False, "empty"
     if len(content) > 80:
         return False, "too_long"
     if any(word in content for word in UNSAFE_WORDS):
         return False, "unsafe_word"
+    if context and is_comment_off_context(content, context):
+        return False, "off_context"
     if not any(word in content for word in POSITIVE_WORDS) and not content.endswith(("呀", "呢", "～", "！", "!")):
         return False, "not_positive_enough"
     return True, "ok"
+
+
+def is_comment_off_context(content: str, context: AICommentContext) -> bool:
+    post_text = context.text or ""
+    if any(word in post_text for word in TOKEN_CONTEXT_WORDS) and any(
+        word in content for word in OFF_CONTEXT_FOOD_WORDS
+    ):
+        return True
+    if not context.has_visual_inputs and any(word in content for word in OFF_CONTEXT_FOOD_WORDS):
+        food_cues = ("饭", "菜", "吃", "餐", "肉", "烤", "烧烤", "美食", "香")
+        if not any(word in post_text for word in food_cues):
+            return True
+    return False
 
 
 async def create_history_learning_job(db: AsyncSession, created_by: UUID) -> AIJob:
