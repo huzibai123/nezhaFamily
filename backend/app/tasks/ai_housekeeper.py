@@ -4,7 +4,7 @@ AI 家庭管家异步任务
 from uuid import UUID
 
 from app.db.session import AsyncSessionLocal
-from app.tasks import celery_app
+from app.tasks import ai_task
 from app.services.ai_housekeeper import (
     generate_ai_comment_for_post,
     mark_ai_job_failed,
@@ -13,7 +13,7 @@ from app.services.ai_housekeeper import (
 )
 
 
-@celery_app.task(bind=True, max_retries=0)
+@ai_task(bind=True)
 def generate_ai_comment(self, post_id: str) -> dict:
     """为新帖子生成 AI 自动评论。"""
     import asyncio
@@ -31,7 +31,7 @@ def generate_ai_comment(self, post_id: str) -> dict:
     return asyncio.run(_run())
 
 
-@celery_app.task(bind=True, max_retries=0)
+@ai_task(bind=True)
 def run_ai_history_learning(self, job_id: str) -> dict:
     """执行历史学习任务。"""
     import asyncio
@@ -52,7 +52,7 @@ def run_ai_history_learning(self, job_id: str) -> dict:
     return asyncio.run(_run())
 
 
-@celery_app.task(bind=True, max_retries=0)
+@ai_task(bind=True)
 def run_ai_album_suggestions(self, job_id: str) -> dict:
     """生成待管理员确认的 AI 相册整理建议。"""
     import asyncio

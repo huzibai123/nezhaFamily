@@ -2,37 +2,42 @@
 # 功能：本地开发代理（不使用 HTTPS）
 
 :80 {
-    # 日志配置
-    log {
-        output stdout
-        format console
-        level DEBUG
-    }
+	# 开发环境仅保留 MIME 嗅探防护，避免影响 Vite/HMR 调试。
+	header {
+		X-Content-Type-Options "nosniff"
+	}
 
-    # API 请求代理到后端
-    handle /api/* {
-        reverse_proxy backend:8000 {
-            # 请求头设置
-            header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
-            header_up X-Forwarded-Proto {scheme}
-        }
-    }
+	# 日志配置
+	log {
+		output stdout
+		format console
+		level DEBUG
+	}
 
-    # 媒体文件代理
-    handle /media/* {
-        reverse_proxy backend:8000 {
-            header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
-        }
-    }
+	# API 请求代理到后端
+	handle /api/* {
+		reverse_proxy backend:8000 {
+			# 请求头设置
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
 
-    # 前端开发服务器代理（支持热重载 WebSocket）
-    handle {
-        reverse_proxy frontend:3000 {
-            # 支持 Vite HMR WebSocket
-            header_up Upgrade {http.request.header.Upgrade}
-            header_up Connection {http.request.header.Connection}
-        }
-    }
+	# 媒体文件代理
+	handle /media/* {
+		reverse_proxy backend:8000 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
+
+	# 前端开发服务器代理（支持热重载 WebSocket）
+	handle {
+		reverse_proxy frontend:3000 {
+			# 支持 Vite HMR WebSocket
+			header_up Upgrade {http.request.header.Upgrade}
+			header_up Connection {http.request.header.Connection}
+		}
+	}
 }

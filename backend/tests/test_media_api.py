@@ -11,6 +11,7 @@ from httpx import AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api import media as media_api
 from app.core import media_utils
 from app.models.user import User
 from app.models.album import Album, album_media
@@ -25,8 +26,22 @@ PNG_IMAGE_BYTES = (
 )
 
 
+@pytest.fixture
+def isolated_media_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Use a per-test writable media root for upload tests."""
+    media_root = tmp_path / "media"
+    media_root.mkdir(exist_ok=True)
+    monkeypatch.setattr(media_utils, "MEDIA_ROOT", media_root)
+    return media_root
+
+
 @pytest.mark.asyncio
-async def test_upload_image_success(client: AsyncClient, test_user: User):
+async def test_upload_image_success(
+    client: AsyncClient,
+    test_user: User,
+    db: AsyncSession,
+    isolated_media_root: Path,
+):
     """测试上传图片成功"""
     token = create_access_token(data={"user_id": str(test_user.id)})
     headers = {"Authorization": f"Bearer {token}"}
@@ -34,7 +49,7 @@ async def test_upload_image_success(client: AsyncClient, test_user: User):
     # 创建一个简单的测试图片（1x1 像素 PNG）
     image_data = BytesIO(PNG_IMAGE_BYTES)
 
-    files = {"files": ("test_image.png", image_data, "image/png")}
+    files = {"files": ("test_image.png", image_data, "application/octet-stream")}
 
     response = await client.post("/api/v1/upload", files=files, headers=headers)
 
@@ -51,19 +66,20 @@ async def test_upload_image_success(client: AsyncClient, test_user: User):
     assert uploaded_file["raw_url"].startswith("/media/")
     assert "?" not in uploaded_file["raw_url"]
 
+    stored_media = await db.scalar(
+        select(MediaFile).where(MediaFile.original_name == "test_image.png")
+    )
+    assert stored_media is not None
+    assert stored_media.mime_type == "image/png"
+
 
 @pytest.mark.asyncio
 async def test_upload_response_url_can_access_signed_media(
     client: AsyncClient,
     test_user: User,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    isolated_media_root: Path,
 ):
     """上传响应中的 url 是可直接访问的签名媒体链接。"""
-    media_root = tmp_path / "media"
-    media_root.mkdir()
-    monkeypatch.setattr(media_utils, "MEDIA_ROOT", media_root)
-
     token = create_access_token(data={"user_id": str(test_user.id)})
     headers = {"Authorization": f"Bearer {token}"}
     files = {"files": ("test_image.png", BytesIO(PNG_IMAGE_BYTES), "image/png")}
@@ -84,14 +100,9 @@ async def test_upload_multi_file_failure_removes_saved_files_and_db_rows(
     client: AsyncClient,
     test_user: User,
     db: AsyncSession,
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
+    isolated_media_root: Path,
 ):
     """同批上传后续文件失败时，已保存文件和 DB 记录都要回滚。"""
-    media_root = tmp_path / "media"
-    media_root.mkdir()
-    monkeypatch.setattr(media_utils, "MEDIA_ROOT", media_root)
-
     token = create_access_token(data={"user_id": str(test_user.id)})
     headers = {"Authorization": f"Bearer {token}"}
     files = [
@@ -102,7 +113,7 @@ async def test_upload_multi_file_failure_removes_saved_files_and_db_rows(
     response = await client.post("/api/v1/upload", files=files, headers=headers)
 
     assert response.status_code == 400
-    assert list(media_root.iterdir()) == []
+    assert list(isolated_media_root.iterdir()) == []
     media_count = await db.scalar(select(func.count()).select_from(MediaFile))
     assert media_count == 0
 
@@ -135,7 +146,11 @@ async def test_upload_invalid_file_type(client: AsyncClient, test_user: User):
 
 
 @pytest.mark.asyncio
-async def test_upload_rejects_unknown_magic_bytes(client: AsyncClient, test_user: User):
+async def test_upload_rejects_unknown_magic_bytes(
+    client: AsyncClient,
+    test_user: User,
+    isolated_media_root: Path,
+):
     """测试伪造扩展名但无法识别真实文件头时拒绝上传。"""
     token = create_access_token(data={"user_id": str(test_user.id)})
     headers = {"Authorization": f"Bearer {token}"}
@@ -150,7 +165,52 @@ async def test_upload_rejects_unknown_magic_bytes(client: AsyncClient, test_user
 
 
 @pytest.mark.asyncio
-async def test_upload_accepts_mp4_ftyp_box(client: AsyncClient, test_user: User):
+async def test_upload_rejects_allowed_extension_without_mime_mapping(
+    client: AsyncClient,
+    test_user: User,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """测试配置允许但没有 MIME 映射的扩展名会被强制拒绝。"""
+    monkeypatch.setattr(
+        media_api,
+        "ALLOWED_EXTENSIONS",
+        media_api.ALLOWED_EXTENSIONS | {".bmp"},
+    )
+    token = create_access_token(data={"user_id": str(test_user.id)})
+    headers = {"Authorization": f"Bearer {token}"}
+
+    files = {"files": ("bitmap.bmp", BytesIO(b"BMfake-bitmap"), "image/bmp")}
+
+    response = await client.post("/api/v1/upload", files=files, headers=headers)
+
+    assert response.status_code == 400
+    assert "不支持的文件类型" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_upload_rejects_mime_mismatch(
+    client: AsyncClient,
+    test_user: User,
+    isolated_media_root: Path,
+):
+    """测试文件内容 MIME 与扩展名不匹配时拒绝上传。"""
+    token = create_access_token(data={"user_id": str(test_user.id)})
+    headers = {"Authorization": f"Bearer {token}"}
+
+    files = {"files": ("pretend.jpg", BytesIO(PNG_IMAGE_BYTES), "image/jpeg")}
+
+    response = await client.post("/api/v1/upload", files=files, headers=headers)
+
+    assert response.status_code == 400
+    assert "文件内容与扩展名不匹配" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_upload_accepts_mp4_ftyp_box(
+    client: AsyncClient,
+    test_user: User,
+    isolated_media_root: Path,
+):
     """测试 MP4/MOV 检测使用 ftyp box，而不是宽泛前缀。"""
     token = create_access_token(data={"user_id": str(test_user.id)})
     headers = {"Authorization": f"Bearer {token}"}

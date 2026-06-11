@@ -217,6 +217,24 @@ pytest tests/test_auth.py
 pytest --cov=app tests/
 ```
 
+测试数据库默认仍使用 `nezha_family_test`。如需在本机或 CI 指向其他数据库，可设置：
+
+```bash
+TEST_DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/nezha_family_test pytest
+```
+
+### 媒体回收站清理
+
+媒体回收站物理清理提供为手动 Celery 任务，不默认启用 Celery Beat。任务会删除
+`deleted_at` 早于 `MEDIA_TRASH_RETENTION_DAYS` 的媒体主文件、缩略图和数据库记录，
+保留天数默认 30 天：
+
+```bash
+celery -A app.tasks call app.tasks.media_processing.cleanup_expired_media_trash
+```
+
+后续可接入 Celery Beat 或宿主机 cron 定时调用；接入前建议先确认备份策略和软删除入口已经完成。
+
 ## 邀请码机制
 
 ### 初始化管理员账号

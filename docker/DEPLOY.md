@@ -186,6 +186,18 @@ docker run --rm --volumes-from nezha-backend -v $(pwd):/backup alpine tar czf /b
 docker run --rm --volumes-from nezha-backend -v $(pwd):/backup alpine tar xzf /backup/admin-backups.tar.gz -C /app/backups
 ```
 
+### 媒体回收站清理
+
+后端提供手动 Celery 任务清理媒体回收站，不默认启用 Celery Beat。任务会删除
+`deleted_at` 超过 `MEDIA_TRASH_RETENTION_DAYS` 的媒体磁盘文件、缩略图和数据库记录；
+保留天数默认 30 天。
+
+```bash
+docker exec nezha-backend celery -A app.tasks call app.tasks.media_processing.cleanup_expired_media_trash
+```
+
+生产环境如需定时执行，可后续接 Celery Beat 或宿主机 cron。在启用周期任务前，建议先确认备份策略和软删除入口已经就绪。
+
 ## 故障排查
 
 ### 服务无法启动

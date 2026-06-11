@@ -1,65 +1,73 @@
 # 哪吒家庭 - Caddy 反向代理配置（生产环境）
 # 功能：自动 HTTPS、API 代理、静态文件服务
-
 {
-    # 全局配置
-    admin off
-    # 自动 HTTPS 邮箱通知
-    email {$EMAIL}
+	# 全局配置
+	admin off
+	# 自动 HTTPS 邮箱通知
+	email {$EMAIL}
 }
 
 # 主域名配置
 {$DOMAIN} {
-    # 启用压缩
-    encode gzip zstd
+	# 启用压缩
+	encode gzip zstd
 
-    # 日志配置
-    log {
-        output stdout
-        format json
-        level INFO
-    }
+	# 基础安全响应头
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+		X-Frame-Options "DENY"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Content-Security-Policy "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; object-src 'none'; img-src 'self' data: blob:; media-src 'self' blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; font-src 'self' data:"
+	}
 
-    # API 请求代理到后端
-    handle /api/* {
-        reverse_proxy backend:8000 {
-            # 健康检查
-            health_uri /health
-            health_interval 30s
-            health_timeout 10s
+	# 日志配置
+	log {
+		output stdout
+		format json
+		level INFO
+	}
 
-            # 请求头设置
-            header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
-            header_up X-Forwarded-Proto {scheme}
-        }
-    }
+	# API 请求代理到后端
+	handle /api/* {
+		reverse_proxy backend:8000 {
+			# 健康检查
+			health_uri /health
+			health_interval 30s
+			health_timeout 10s
 
-    # 媒体文件代理（需要认证）
-    handle /media/* {
-        reverse_proxy backend:8000 {
-            header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-For {remote_host}
-        }
-    }
+			# 请求头设置
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+			header_up X-Forwarded-Proto {scheme}
+		}
+	}
 
-    # 前端静态文件
-    handle {
-        reverse_proxy frontend:80
-    }
+	# 媒体文件代理（需要认证）
+	handle /media/* {
+		reverse_proxy backend:8000 {
+			header_up X-Real-IP {remote_host}
+			header_up X-Forwarded-For {remote_host}
+		}
+	}
 
-    # 错误页面
-    handle_errors {
-        @500 expression {http.error.status_code} >= 500
-        handle @500 {
-            respond "服务器错误，请稍后再试" 500
-        }
+	# 前端静态文件
+	handle {
+		reverse_proxy frontend:80
+	}
 
-        @404 expression {http.error.status_code} == 404
-        handle @404 {
-            respond "页面未找到" 404
-        }
-    }
+	# 错误页面
+	handle_errors {
+		@500 expression {http.error.status_code} >= 500
+		handle @500 {
+			respond "服务器错误，请稍后再试" 500
+		}
+
+		@404 expression {http.error.status_code} == 404
+		handle @404 {
+			respond "页面未找到" 404
+		}
+	}
 }
 
 # HTTP 自动重定向到 HTTPS（Caddy 自动处理）

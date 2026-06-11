@@ -85,6 +85,7 @@ services:
             # 应用配置
             DEBUG: "false"
             ENVIRONMENT: production
+            TRUSTED_PROXY_COUNT: ${TRUSTED_PROXY_COUNT:-1}
             ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?请在.env文件中设置ALLOWED_ORIGINS}
             # 文件存储配置
             MEDIA_ROOT: /app/media
@@ -100,6 +101,13 @@ services:
             # Celery 配置
             CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
             CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/2
+            CELERY_TASK_TIME_LIMIT: ${CELERY_TASK_TIME_LIMIT:-600}
+            CELERY_TASK_SOFT_TIME_LIMIT: ${CELERY_TASK_SOFT_TIME_LIMIT:-540}
+            CELERY_WORKER_PREFETCH_MULTIPLIER: ${CELERY_WORKER_PREFETCH_MULTIPLIER:-1}
+            CELERY_IMAGE_TASK_TIME_LIMIT: ${CELERY_IMAGE_TASK_TIME_LIMIT:-600}
+            CELERY_IMAGE_TASK_SOFT_TIME_LIMIT: ${CELERY_IMAGE_TASK_SOFT_TIME_LIMIT:-540}
+            CELERY_AI_TASK_TIME_LIMIT: ${CELERY_AI_TASK_TIME_LIMIT:-180}
+            CELERY_AI_TASK_SOFT_TIME_LIMIT: ${CELERY_AI_TASK_SOFT_TIME_LIMIT:-150}
         volumes:
             - media_files:/app/media
             - backup_files:/app/backups
@@ -139,7 +147,9 @@ services:
             CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1
             CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD}@redis:6379/2
             MEDIA_ROOT: /app/media
+            DEBUG: "false"
             ENVIRONMENT: production
+            TRUSTED_PROXY_COUNT: ${TRUSTED_PROXY_COUNT:-1}
             AI_API_KEY: ${AI_API_KEY:-}
             AI_DEFAULT_BASE_URL: ${AI_DEFAULT_BASE_URL:-https://api.openai.com/v1}
             AI_DEFAULT_TEXT_MODEL: ${AI_DEFAULT_TEXT_MODEL:-gpt-4o-mini}
@@ -147,6 +157,13 @@ services:
             AI_ENABLED: ${AI_ENABLED:-false}
             AI_REQUEST_TIMEOUT_SECONDS: ${AI_REQUEST_TIMEOUT_SECONDS:-30}
             AI_FAILURE_THRESHOLD: ${AI_FAILURE_THRESHOLD:-3}
+            CELERY_TASK_TIME_LIMIT: ${CELERY_TASK_TIME_LIMIT:-600}
+            CELERY_TASK_SOFT_TIME_LIMIT: ${CELERY_TASK_SOFT_TIME_LIMIT:-540}
+            CELERY_WORKER_PREFETCH_MULTIPLIER: ${CELERY_WORKER_PREFETCH_MULTIPLIER:-1}
+            CELERY_IMAGE_TASK_TIME_LIMIT: ${CELERY_IMAGE_TASK_TIME_LIMIT:-600}
+            CELERY_IMAGE_TASK_SOFT_TIME_LIMIT: ${CELERY_IMAGE_TASK_SOFT_TIME_LIMIT:-540}
+            CELERY_AI_TASK_TIME_LIMIT: ${CELERY_AI_TASK_TIME_LIMIT:-180}
+            CELERY_AI_TASK_SOFT_TIME_LIMIT: ${CELERY_AI_TASK_SOFT_TIME_LIMIT:-150}
         volumes:
             - media_files:/app/media
             - ./logs/celery:/app/logs

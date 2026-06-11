@@ -4,20 +4,42 @@
 """
 
 import logging
+import os
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID
 from PIL import Image
-from sqlalchemy import select
+from sqlalchemy import Column, DateTime, MetaData, String, Table, delete, select
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
 from app.core.config import settings
-from app.tasks import celery_app
 from app.core.media_utils import MEDIA_ROOT, media_path_from_url
+
+try:
+    from app.tasks import IMAGE_TASK_OPTIONS, celery_app
+except ImportError:
+    from app.tasks import celery_app
+
+    IMAGE_TASK_OPTIONS = {"max_retries": 3}
 
 logger = logging.getLogger(__name__)
 
 # 与 API 和 Alembic 使用同一个 Settings 来源。
 DATABASE_URL = settings.DATABASE_URL
+DEFAULT_MEDIA_TRASH_RETENTION_DAYS = 30
+
+_cleanup_metadata = MetaData()
+_media_files_cleanup_table = Table(
+    "media_files",
+    _cleanup_metadata,
+    Column("id", PG_UUID(as_uuid=True), primary_key=True),
+    Column("file_path", String(500), nullable=False),
+    Column("thumbnail_path", String(500), nullable=True),
+    Column("deleted_at", DateTime(timezone=True), nullable=True),
+)
 
 # 为 Celery 任务创建独立的异步引擎和 session 工厂
 task_engine = create_async_engine(DATABASE_URL, echo=False, future=True)
@@ -26,6 +48,174 @@ TaskAsyncSession = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
 )
+
+
+@dataclass(frozen=True)
+class TrashMediaRecord:
+    """待从媒体回收站物理清理的记录。"""
+
+    id: UUID
+    file_path: str
+    thumbnail_path: str | None = None
+
+
+class MediaTrashUnavailable(RuntimeError):
+    """当前数据库尚不支持媒体回收站清理。"""
+
+
+def get_media_trash_retention_days(retention_days: int | None = None) -> int:
+    """读取媒体回收站保留天数，默认 30 天。"""
+    if retention_days is not None:
+        return max(0, retention_days)
+
+    raw_value = os.getenv("MEDIA_TRASH_RETENTION_DAYS")
+    if not raw_value:
+        return DEFAULT_MEDIA_TRASH_RETENTION_DAYS
+
+    try:
+        return max(0, int(raw_value))
+    except ValueError:
+        logger.warning(
+            "MEDIA_TRASH_RETENTION_DAYS=%s 无效，回退到默认 %s 天",
+            raw_value,
+            DEFAULT_MEDIA_TRASH_RETENTION_DAYS,
+        )
+        return DEFAULT_MEDIA_TRASH_RETENTION_DAYS
+
+
+def _is_missing_deleted_at_error(exc: SQLAlchemyError) -> bool:
+    message = str(exc).lower()
+    return "deleted_at" in message and (
+        "undefinedcolumn" in message
+        or "does not exist" in message
+        or "no such column" in message
+    )
+
+
+def _media_disk_path(url_or_path: str) -> Path:
+    """把媒体 URL/路径解析为任务内使用的安全磁盘路径。"""
+    relative_path = Path(media_path_from_url(url_or_path))
+    if relative_path.is_absolute() or ".." in relative_path.parts:
+        raise ValueError("unsafe_media_path")
+
+    media_root = MEDIA_ROOT.resolve()
+    full_path = (media_root / relative_path).resolve()
+    full_path.relative_to(media_root)
+    return full_path
+
+
+async def fetch_expired_trashed_media(cutoff: datetime) -> list[TrashMediaRecord]:
+    """查询超过回收站保留期的软删除媒体记录。"""
+    table = _media_files_cleanup_table
+
+    async with TaskAsyncSession() as session:
+        try:
+            result = await session.execute(
+                select(table.c.id, table.c.file_path, table.c.thumbnail_path).where(
+                    table.c.deleted_at.is_not(None),
+                    table.c.deleted_at < cutoff,
+                )
+            )
+        except SQLAlchemyError as exc:
+            await session.rollback()
+            if _is_missing_deleted_at_error(exc):
+                raise MediaTrashUnavailable(
+                    "media_files.deleted_at column is not available"
+                ) from exc
+            raise
+
+        return [
+            TrashMediaRecord(
+                id=row.id,
+                file_path=row.file_path,
+                thumbnail_path=row.thumbnail_path,
+            )
+            for row in result
+        ]
+
+
+async def delete_expired_trashed_media_records(media_ids: list[UUID]) -> int:
+    """删除已完成磁盘清理的媒体数据库记录。"""
+    if not media_ids:
+        return 0
+
+    table = _media_files_cleanup_table
+    async with TaskAsyncSession() as session:
+        try:
+            result = await session.execute(
+                delete(table).where(table.c.id.in_(media_ids))
+            )
+            await session.commit()
+        except SQLAlchemyError as exc:
+            await session.rollback()
+            if _is_missing_deleted_at_error(exc):
+                raise MediaTrashUnavailable(
+                    "media_files.deleted_at column is not available"
+                ) from exc
+            raise
+
+    return result.rowcount or 0
+
+
+def _delete_media_record_disk_files(record: TrashMediaRecord) -> tuple[int, int]:
+    """删除单条媒体记录对应的主文件和缩略图，返回删除/缺失数量。"""
+    deleted_count = 0
+    missing_count = 0
+    paths: list[Path] = []
+    seen_paths: set[Path] = set()
+
+    for raw_path in (record.file_path, record.thumbnail_path):
+        if not raw_path:
+            continue
+        disk_path = _media_disk_path(raw_path)
+        if disk_path not in seen_paths:
+            seen_paths.add(disk_path)
+            paths.append(disk_path)
+
+    for disk_path in paths:
+        if disk_path.exists() and not disk_path.is_file():
+            raise ValueError("unsafe_media_path")
+
+    for disk_path in paths:
+        if not disk_path.exists():
+            missing_count += 1
+            continue
+        disk_path.unlink()
+        deleted_count += 1
+
+    return deleted_count, missing_count
+
+
+def delete_expired_trashed_media_files(
+    records: list[TrashMediaRecord],
+) -> tuple[list[UUID], dict]:
+    """删除过期软删除媒体的磁盘文件，返回可删除 DB 记录 ID 与统计信息。"""
+    deleted_record_ids: list[UUID] = []
+    unsafe_record_ids: list[str] = []
+    deleted_files = 0
+    missing_files = 0
+
+    for record in records:
+        try:
+            record_deleted_files, record_missing_files = (
+                _delete_media_record_disk_files(record)
+            )
+        except ValueError:
+            logger.warning("媒体回收站清理跳过不安全路径记录：%s", record.id)
+            unsafe_record_ids.append(str(record.id))
+            continue
+
+        deleted_files += record_deleted_files
+        missing_files += record_missing_files
+        deleted_record_ids.append(record.id)
+
+    return deleted_record_ids, {
+        "candidate_records": len(records),
+        "deleted_files": deleted_files,
+        "missing_files": missing_files,
+        "skipped_records": len(unsafe_record_ids),
+        "unsafe_record_ids": unsafe_record_ids,
+    }
 
 
 async def get_media_by_id(media_id: str):
@@ -93,7 +283,7 @@ async def update_media_after_compression(
             await session.commit()
 
 
-@celery_app.task(bind=True, max_retries=3)
+@celery_app.task(bind=True, **IMAGE_TASK_OPTIONS)
 def compress_image(self, media_id: str) -> dict:
     """
     压缩图片任务
@@ -128,8 +318,11 @@ def compress_image(self, media_id: str) -> dict:
             return {"status": "skipped", "reason": "not_image"}
 
         # 构建文件绝对路径（file_path 存储的是 /media/xxx.jpg）
-        relative_path = media_path_from_url(media.file_path)
-        file_path = MEDIA_ROOT / relative_path
+        try:
+            file_path = _media_disk_path(media.file_path)
+        except ValueError:
+            logger.warning("压缩任务：媒体文件 %s 路径不安全", media_id)
+            return {"status": "error", "reason": "unsafe_media_path"}
 
         if not file_path.exists():
             logger.warning(f"压缩任务：文件 {file_path} 不存在")
@@ -244,7 +437,7 @@ def compress_image(self, media_id: str) -> dict:
         return {"status": "error", "reason": "task_failed", "detail": str(e)}
 
 
-@celery_app.task(bind=True, max_retries=3)
+@celery_app.task(bind=True, **IMAGE_TASK_OPTIONS)
 def generate_thumbnail(self, media_id: str) -> dict:
     """
     生成缩略图任务
@@ -282,9 +475,13 @@ def generate_thumbnail(self, media_id: str) -> dict:
         thumbnails_dir = MEDIA_ROOT / "thumbnails"
         thumbnails_dir.mkdir(parents=True, exist_ok=True)
 
-        file_name = Path(media.file_path).name
-        relative_path = media_path_from_url(media.file_path)
-        file_path = MEDIA_ROOT / relative_path
+        try:
+            file_path = _media_disk_path(media.file_path)
+        except ValueError:
+            logger.warning("缩略图任务：媒体文件 %s 路径不安全", media_id)
+            return {"status": "error", "reason": "unsafe_media_path"}
+
+        file_name = file_path.name
 
         if not file_path.exists():
             logger.warning(f"缩略图任务：文件 {file_path} 不存在")
@@ -342,3 +539,44 @@ def generate_thumbnail(self, media_id: str) -> dict:
         if self.request.retries < self.max_retries:
             raise self.retry(exc=e, countdown=60)
         return {"status": "error", "reason": "task_failed", "detail": str(e)}
+
+
+@celery_app.task
+def cleanup_expired_media_trash(retention_days: int | None = None) -> dict:
+    """
+    手动清理媒体回收站。
+
+    删除 deleted_at 早于 MEDIA_TRASH_RETENTION_DAYS（默认 30 天）的媒体主文件、
+    缩略图和数据库记录。此任务不会被 Celery Beat 默认调度。
+    """
+    import asyncio
+
+    days = get_media_trash_retention_days(retention_days)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+    loop = asyncio.new_event_loop()
+    try:
+        asyncio.set_event_loop(loop)
+        records = loop.run_until_complete(fetch_expired_trashed_media(cutoff))
+        record_ids, file_stats = delete_expired_trashed_media_files(records)
+        deleted_db_records = loop.run_until_complete(
+            delete_expired_trashed_media_records(record_ids)
+        )
+    except MediaTrashUnavailable as exc:
+        logger.warning("媒体回收站清理跳过：%s", exc)
+        return {
+            "status": "skipped",
+            "reason": "trash_column_unavailable",
+            "retention_days": days,
+            "cutoff": cutoff.isoformat(),
+        }
+    finally:
+        loop.close()
+
+    return {
+        "status": "success",
+        "retention_days": days,
+        "cutoff": cutoff.isoformat(),
+        "deleted_db_records": deleted_db_records,
+        **file_stats,
+    }

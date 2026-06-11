@@ -116,7 +116,7 @@ async function checkInvite() {
     const result = await lookupInvite(form.inviteCode.trim())
     inviteValid.value = result.valid
     inviteMessage.value = result.valid
-      ? `来自 ${result.inviter_username || '家人'} 的邀请${result.inviter_role_in_family ? ` · ${result.inviter_role_in_family}` : ''}`
+      ? result.message || '邀请码可用'
       : result.message || '邀请码无效'
   } catch (error) {
     inviteValid.value = false

@@ -1,11 +1,51 @@
 """
 哪吒家庭 - FastAPI 应用入口
 """
+from contextlib import asynccontextmanager
+import inspect
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from redis.asyncio import ConnectionPool, Redis
 
 from app.core.config import settings
 from app.api import auth, users, posts, comments, likes, media, albums, events, admin, notifications, ai
+
+
+async def _maybe_await(result):
+    if inspect.isawaitable(result):
+        await result
+
+
+async def _close_redis_client(redis_client: Redis) -> None:
+    close = getattr(redis_client, "aclose", None) or getattr(redis_client, "close", None)
+    if close is None:
+        return
+
+    try:
+        await _maybe_await(close(close_connection_pool=False))
+    except TypeError:
+        await _maybe_await(close())
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage shared runtime clients owned by the ASGI process."""
+    redis_pool = ConnectionPool.from_url(settings.REDIS_URL, decode_responses=True)
+    app.state.redis_pool = redis_pool
+    app.state.redis_client = Redis(connection_pool=redis_pool)
+
+    try:
+        yield
+    finally:
+        redis_client = getattr(app.state, "redis_client", None)
+        if redis_client is not None:
+            await _close_redis_client(redis_client)
+
+        await redis_pool.disconnect()
+        app.state.redis_client = None
+        app.state.redis_pool = None
+
 
 # 创建 FastAPI 应用实例
 # 生产环境（DEBUG=False）禁用 API 文档，避免暴露接口定义
@@ -13,6 +53,7 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     version=settings.VERSION,
     description="私有化家庭分享平台 API",
+    lifespan=lifespan,
     docs_url="/api/docs" if settings.DEBUG else None,
     redoc_url="/api/redoc" if settings.DEBUG else None,
     openapi_url="/api/openapi.json" if settings.DEBUG else None,

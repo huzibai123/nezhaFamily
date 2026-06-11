@@ -2,8 +2,6 @@ import api from './index'
 
 export interface InviteLookup {
   valid: boolean
-  inviter_username?: string | null
-  inviter_role_in_family?: string | null
   message: string
 }
 

@@ -86,6 +86,7 @@ services:
             # 应用配置
             DEBUG: "true"
             ENVIRONMENT: development
+            TRUSTED_PROXY_COUNT: "1"
             ALLOWED_ORIGINS: http://localhost:3000,http://localhost:8080
             # 文件存储配置
             MEDIA_ROOT: /app/media
@@ -101,6 +102,13 @@ services:
             # Celery 配置
             CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-nezha_redis_password}@redis:6379/1
             CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-nezha_redis_password}@redis:6379/2
+            CELERY_TASK_TIME_LIMIT: 600
+            CELERY_TASK_SOFT_TIME_LIMIT: 540
+            CELERY_WORKER_PREFETCH_MULTIPLIER: 1
+            CELERY_IMAGE_TASK_TIME_LIMIT: 600
+            CELERY_IMAGE_TASK_SOFT_TIME_LIMIT: 540
+            CELERY_AI_TASK_TIME_LIMIT: 180
+            CELERY_AI_TASK_SOFT_TIME_LIMIT: 150
         volumes:
             - ./backend:/app
             - media_files:/app/media
@@ -140,7 +148,9 @@ services:
             CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-nezha_redis_password}@redis:6379/1
             CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:-nezha_redis_password}@redis:6379/2
             MEDIA_ROOT: /app/media
+            DEBUG: "true"
             ENVIRONMENT: development
+            TRUSTED_PROXY_COUNT: "1"
             AI_API_KEY: ${AI_API_KEY:-}
             AI_DEFAULT_BASE_URL: ${AI_DEFAULT_BASE_URL:-https://api.openai.com/v1}
             AI_DEFAULT_TEXT_MODEL: ${AI_DEFAULT_TEXT_MODEL:-gpt-4o-mini}
@@ -148,6 +158,13 @@ services:
             AI_ENABLED: ${AI_ENABLED:-false}
             AI_REQUEST_TIMEOUT_SECONDS: ${AI_REQUEST_TIMEOUT_SECONDS:-30}
             AI_FAILURE_THRESHOLD: ${AI_FAILURE_THRESHOLD:-3}
+            CELERY_TASK_TIME_LIMIT: 600
+            CELERY_TASK_SOFT_TIME_LIMIT: 540
+            CELERY_WORKER_PREFETCH_MULTIPLIER: 1
+            CELERY_IMAGE_TASK_TIME_LIMIT: 600
+            CELERY_IMAGE_TASK_SOFT_TIME_LIMIT: 540
+            CELERY_AI_TASK_TIME_LIMIT: 180
+            CELERY_AI_TASK_SOFT_TIME_LIMIT: 150
         volumes:
             - ./backend:/app
             - media_files:/app/media

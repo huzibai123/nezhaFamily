@@ -1,6 +1,8 @@
 """
 认证 API 测试
 """
+from types import SimpleNamespace
+
 import pytest
 from httpx import AsyncClient
 from redis.exceptions import ConnectionError
@@ -44,6 +46,14 @@ class FailingRedis:
 
     async def delete(self, key: str):
         raise ConnectionError("redis unavailable")
+
+
+@pytest.fixture(autouse=True)
+def fail_open_auth_redis(monkeypatch: pytest.MonkeyPatch):
+    """认证接口默认不依赖真实 Redis，限流专项测试会单独替换为 FakeRedis。"""
+    from app.api import auth as auth_api
+
+    monkeypatch.setattr(auth_api, "redis_client", FailingRedis())
 
 
 @pytest.mark.asyncio
@@ -103,6 +113,31 @@ async def test_register_invalid_invite_code(client: AsyncClient):
 
 
 @pytest.mark.asyncio
+async def test_register_integrity_error_returns_400(
+    client: AsyncClient,
+    test_admin: User,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """测试注册提交时遇到唯一约束冲突会统一返回 400。"""
+    from app.api import auth as auth_api
+
+    monkeypatch.setattr(auth_api, "generate_invite_code", lambda: "TEST_ADMIN_INVITE")
+
+    response = await client.post(
+        "/api/v1/register",
+        json={
+            "username": "invitecollision",
+            "email": "invitecollision@test.com",
+            "password": "password123",
+            "invite_code": test_admin.invite_code,
+        },
+    )
+
+    assert response.status_code == 400
+    assert "已被使用" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
 async def test_lookup_invite_code_success(
     client: AsyncClient,
     test_admin: User,
@@ -117,8 +152,8 @@ async def test_lookup_invite_code_success(
     assert response.status_code == 200
     data = response.json()
     assert data["valid"] is True
-    assert data["inviter_username"] == "testadmin"
-    assert data["inviter_role_in_family"] == "爸爸"
+    assert "inviter_username" not in data
+    assert "inviter_role_in_family" not in data
     assert "可用" in data["message"]
 
 
@@ -130,8 +165,61 @@ async def test_lookup_invite_code_invalid(client: AsyncClient):
     assert response.status_code == 200
     data = response.json()
     assert data["valid"] is False
-    assert data["inviter_username"] is None
+    assert "inviter_username" not in data
+    assert "inviter_role_in_family" not in data
     assert "邀请码" in data["message"]
+
+
+@pytest.mark.asyncio
+async def test_lookup_invite_rate_limit_uses_redis_counter(
+    client: AsyncClient,
+    test_admin: User,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """测试公开邀请码查询按客户端 IP 走 Redis 简单限流。"""
+    from app.api import auth as auth_api
+
+    fake_redis = FakeRedis()
+    monkeypatch.setattr(auth_api, "redis_client", fake_redis)
+    monkeypatch.setattr(auth_api, "MAX_INVITE_LOOKUP_ATTEMPTS", 2)
+    monkeypatch.setattr(auth_api.settings, "TRUSTED_PROXY_COUNT", 1)
+    headers = {"X-Forwarded-For": "203.0.113.30"}
+
+    for _ in range(2):
+        response = await client.get(
+            f"/api/v1/invites/{test_admin.invite_code}",
+            headers=headers,
+        )
+        assert response.status_code == 200
+
+    limited_response = await client.get(
+        f"/api/v1/invites/{test_admin.invite_code}",
+        headers=headers,
+    )
+
+    assert limited_response.status_code == 429
+    assert (
+        fake_redis.expirations["invite_lookup:203.0.113.30"]
+        == auth_api.INVITE_LOOKUP_WINDOW_SECONDS
+    )
+
+
+def test_get_client_ip_only_trusts_x_forwarded_for_when_configured(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """测试未配置可信代理时忽略 X-Forwarded-For。"""
+    from app.api import auth as auth_api
+
+    request = SimpleNamespace(
+        headers={"x-forwarded-for": "203.0.113.10, 198.51.100.2"},
+        client=SimpleNamespace(host="192.0.2.50"),
+    )
+
+    monkeypatch.setattr(auth_api.settings, "TRUSTED_PROXY_COUNT", 0)
+    assert auth_api.get_client_ip(request) == "192.0.2.50"
+
+    monkeypatch.setattr(auth_api.settings, "TRUSTED_PROXY_COUNT", 1)
+    assert auth_api.get_client_ip(request) == "203.0.113.10"
 
 
 @pytest.mark.asyncio
@@ -160,6 +248,7 @@ async def test_login_rate_limit_uses_shared_redis_counter(
 
     fake_redis = FakeRedis()
     monkeypatch.setattr(auth_api, "redis_client", fake_redis)
+    monkeypatch.setattr(auth_api.settings, "TRUSTED_PROXY_COUNT", 1)
     headers = {"X-Forwarded-For": "203.0.113.10"}
 
     for _ in range(auth_api.MAX_LOGIN_ATTEMPTS):

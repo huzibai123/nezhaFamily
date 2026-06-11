@@ -94,6 +94,4 @@ class InviteCodeResponse(BaseModel):
 class InviteLookupResponse(BaseModel):
     """公开的邀请码校验响应"""
     valid: bool
-    inviter_username: Optional[str] = None
-    inviter_role_in_family: Optional[str] = None
     message: str

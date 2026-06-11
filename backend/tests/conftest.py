@@ -26,7 +26,8 @@ import_all_models()
 DB_HOST = os.getenv(
     "TEST_DB_HOST", "postgres" if os.path.exists("/.dockerenv") else "localhost"
 )
-TEST_DATABASE_URL = f"postgresql+asyncpg://nezha_user:nezha_dev_password@{DB_HOST}:5432/nezha_family_test"
+DEFAULT_TEST_DATABASE_URL = f"postgresql+asyncpg://nezha_user:nezha_dev_password@{DB_HOST}:5432/nezha_family_test"
+TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL", DEFAULT_TEST_DATABASE_URL)
 
 
 class _ImmediateTaskStub:

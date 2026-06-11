@@ -329,6 +329,11 @@ async def store_uploaded_media_files(
                 raise HTTPException(
                     status_code=400, detail=f"不支持的文件类型: {file_ext}"
                 )
+            allowed_mimes = _ALLOWED_MIME_BY_EXT.get(file_ext)
+            if not allowed_mimes:
+                raise HTTPException(
+                    status_code=400, detail=f"不支持的文件类型: {file_ext}"
+                )
 
             unique_filename = f"{uuid.uuid4()}{file_ext}"
             file_path = media_storage_path(unique_filename)
@@ -336,10 +341,9 @@ async def store_uploaded_media_files(
             file_size, file_header = await _save_upload_file_streaming(file, file_path)
             saved_paths.append(file_path)
             detected_mime = _detect_mime_from_bytes(file_header)
-            allowed_mimes = _ALLOWED_MIME_BY_EXT.get(file_ext, [])
-            if allowed_mimes and not detected_mime:
+            if not detected_mime:
                 raise HTTPException(status_code=400, detail="无法识别文件类型")
-            if allowed_mimes and detected_mime not in allowed_mimes:
+            if detected_mime not in allowed_mimes:
                 raise HTTPException(
                     status_code=400,
                     detail=f"文件内容与扩展名不匹配: 检测到 {detected_mime}",
@@ -351,7 +355,7 @@ async def store_uploaded_media_files(
                 file_path=original_url,
                 file_type=media_type,
                 original_name=file.filename,
-                mime_type=detected_mime or file.content_type,
+                mime_type=detected_mime,
                 file_size=file_size,
                 uploader_id=current_user.id,
                 captured_at=datetime.now(timezone.utc),

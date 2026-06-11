@@ -2,17 +2,16 @@
 认证相关 API 路由
 包含注册、登录、获取用户信息等功能
 """
-import asyncio
 import logging
-from typing import Optional
+from typing import Any, Optional
 from uuid import UUID
 import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, status, Request
-from redis.asyncio import Redis
 from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
+from sqlalchemy.exc import IntegrityError
 
 from app.db.session import get_db
 from app.models.user import User
@@ -35,11 +34,12 @@ from app.core.config import settings
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# 登录限速：Redis 共享计数器（IP -> 失败次数）
-redis_client = None
-_redis_clients_by_loop: dict[int, Redis] = {}
+# 登录/邀请码限速：Redis 共享计数器（IP -> 失败次数）
+redis_client: Any | None = None
 MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_SECONDS = 300  # 5 分钟锁定
+MAX_INVITE_LOOKUP_ATTEMPTS = 30
+INVITE_LOOKUP_WINDOW_SECONDS = 60
 
 
 # ==================== 辅助函数 ====================
@@ -85,33 +85,52 @@ def generate_invite_code() -> str:
 
 
 def get_client_ip(request: Request) -> str:
-    """从反向代理请求头或连接信息中获取客户端 IP。"""
+    """获取客户端 IP，仅在显式配置可信代理数量后信任 X-Forwarded-For。"""
+    direct_client_ip = request.client.host if request.client else "unknown"
+    if settings.TRUSTED_PROXY_COUNT <= 0:
+        return direct_client_ip
+
     forwarded_for = request.headers.get("x-forwarded-for")
-    if forwarded_for:
-        return forwarded_for.split(",", 1)[0].strip() or "unknown"
-    return request.client.host if request.client else "unknown"
+    if not forwarded_for:
+        return direct_client_ip
+
+    forwarded_chain = [
+        forwarded_ip.strip()
+        for forwarded_ip in forwarded_for.split(",")
+        if forwarded_ip.strip()
+    ]
+    if not forwarded_chain:
+        return direct_client_ip
+
+    if len(forwarded_chain) > settings.TRUSTED_PROXY_COUNT:
+        return forwarded_chain[-(settings.TRUSTED_PROXY_COUNT + 1)]
+    return forwarded_chain[0]
 
 
 def login_attempt_key(client_ip: str) -> str:
     return f"login_attempts:{client_ip}"
 
 
-def get_redis_client():
-    """按 event loop 懒加载 Redis client，避免异步测试跨 loop 复用连接。"""
+def invite_lookup_key(client_ip: str) -> str:
+    return f"invite_lookup:{client_ip}"
+
+
+def get_redis_client(request: Request):
+    """从应用生命周期管理的 Redis client 获取登录限流计数器。"""
     if redis_client is not None:
         return redis_client
 
-    loop_id = id(asyncio.get_running_loop())
-    client = _redis_clients_by_loop.get(loop_id)
+    return getattr(request.app.state, "redis_client", None)
+
+
+async def ensure_login_not_locked(request: Request, client_ip: str) -> None:
+    client = get_redis_client(request)
     if client is None:
-        client = Redis.from_url(settings.REDIS_URL, decode_responses=True)
-        _redis_clients_by_loop[loop_id] = client
-    return client
+        logger.warning("登录限流 Redis 尚未初始化，跳过锁定检查")
+        return
 
-
-async def ensure_login_not_locked(client_ip: str) -> None:
     try:
-        attempts = await get_redis_client().get(login_attempt_key(client_ip))
+        attempts = await client.get(login_attempt_key(client_ip))
     except RedisError as exc:
         logger.warning("登录限流 Redis 不可用，跳过锁定检查: %s", exc)
         return
@@ -123,21 +142,53 @@ async def ensure_login_not_locked(client_ip: str) -> None:
         )
 
 
-async def record_failed_login(client_ip: str) -> None:
+async def record_failed_login(request: Request, client_ip: str) -> None:
+    client = get_redis_client(request)
+    if client is None:
+        logger.warning("登录限流 Redis 尚未初始化，跳过失败计数")
+        return
+
     key = login_attempt_key(client_ip)
     try:
-        attempts = await get_redis_client().incr(key)
+        attempts = await client.incr(key)
         if attempts == 1:
-            await get_redis_client().expire(key, LOCKOUT_SECONDS)
+            await client.expire(key, LOCKOUT_SECONDS)
     except RedisError as exc:
         logger.warning("登录限流 Redis 不可用，跳过失败计数: %s", exc)
 
 
-async def clear_failed_logins(client_ip: str) -> None:
+async def clear_failed_logins(request: Request, client_ip: str) -> None:
+    client = get_redis_client(request)
+    if client is None:
+        logger.warning("登录限流 Redis 尚未初始化，跳过清理计数")
+        return
+
     try:
-        await get_redis_client().delete(login_attempt_key(client_ip))
+        await client.delete(login_attempt_key(client_ip))
     except RedisError as exc:
         logger.warning("登录限流 Redis 不可用，跳过清理计数: %s", exc)
+
+
+async def ensure_invite_lookup_not_limited(request: Request, client_ip: str) -> None:
+    client = get_redis_client(request)
+    if client is None:
+        logger.warning("邀请码查询限流 Redis 尚未初始化，跳过计数")
+        return
+
+    key = invite_lookup_key(client_ip)
+    try:
+        attempts = await client.incr(key)
+        if attempts == 1:
+            await client.expire(key, INVITE_LOOKUP_WINDOW_SECONDS)
+    except RedisError as exc:
+        logger.warning("邀请码查询限流 Redis 不可用，跳过计数: %s", exc)
+        return
+
+    if attempts > MAX_INVITE_LOOKUP_ATTEMPTS:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"查询过于频繁，请 {INVITE_LOOKUP_WINDOW_SECONDS} 秒后再试",
+        )
 
 
 # ==================== API 路由 ====================
@@ -145,6 +196,7 @@ async def clear_failed_logins(client_ip: str) -> None:
 @router.get("/invites/{invite_code}", response_model=InviteLookupResponse)
 async def lookup_invite(
     invite_code: str,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """
@@ -152,6 +204,8 @@ async def lookup_invite(
 
     无效邀请码也返回 200，方便注册页展示友好提示。
     """
+    await ensure_invite_lookup_not_limited(request, get_client_ip(request))
+
     inviter = await verify_invite_code(db, invite_code)
     if not inviter:
         return InviteLookupResponse(
@@ -161,8 +215,6 @@ async def lookup_invite(
 
     return InviteLookupResponse(
         valid=True,
-        inviter_username=inviter.username,
-        inviter_role_in_family=inviter.role_in_family,
         message="邀请码可用",
     )
 
@@ -216,7 +268,14 @@ async def register(
     )
 
     db.add(new_user)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="用户名、邮箱或邀请码已被使用",
+        )
     await db.refresh(new_user)
 
     # 5. 生成 JWT Token
@@ -242,12 +301,12 @@ async def login(
     - 同一 IP 密码错误超过 5 次会被锁定 5 分钟
     """
     client_ip = get_client_ip(request)
-    await ensure_login_not_locked(client_ip)
+    await ensure_login_not_locked(request, client_ip)
 
     # 1. 查找用户
     user = await get_user_by_username_or_email(db, login_data.username)
     if not user:
-        await record_failed_login(client_ip)
+        await record_failed_login(request, client_ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="用户名或密码错误",
@@ -255,14 +314,14 @@ async def login(
 
     # 2. 验证密码
     if not verify_password(login_data.password, user.password_hash):
-        await record_failed_login(client_ip)
+        await record_failed_login(request, client_ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="用户名或密码错误",
         )
 
     # 登录成功，清除该 IP 的失败记录
-    await clear_failed_logins(client_ip)
+    await clear_failed_logins(request, client_ip)
 
     # 3. 生成 JWT Token
     access_token = create_access_token(data={"user_id": str(user.id)})
