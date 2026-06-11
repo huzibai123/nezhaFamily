@@ -15,6 +15,7 @@ from app.models.post import Post
 from app.models.comment import Comment
 from app.models.like import Like
 from app.schemas.comment import CommentCreate, CommentResponse, CommentListResponse, CommentUpdate
+from app.core.media_utils import signed_media_url
 from app.core.security import get_current_user
 from app.api.notifications import (
     build_comment_message,
@@ -28,10 +29,10 @@ router = APIRouter()
 def comment_display_author(comment: Comment, author: User, persona: AIPersona | None = None) -> tuple[str, str | None]:
     """Return the public-facing author label for a comment."""
     if comment.is_ai_generated and persona:
-        return persona.name, persona.avatar_url
+        return persona.name, signed_media_url(persona.avatar_url)
     if author.is_system:
-        return author.role_in_family or author.username, author.avatar_url
-    return author.username, author.avatar_url
+        return author.role_in_family or author.username, signed_media_url(author.avatar_url)
+    return author.username, signed_media_url(author.avatar_url)
 
 
 def comment_response(

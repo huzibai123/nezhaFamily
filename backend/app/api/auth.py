@@ -18,7 +18,6 @@ from app.models.user import User
 from app.schemas.user import (
     UserCreate,
     UserLogin,
-    UserResponse,
     UserProfile,
     TokenResponse,
     InviteLookupResponse,
@@ -30,6 +29,7 @@ from app.core.security import (
     get_current_user_id,
 )
 from app.core.config import settings
+from app.api.users import user_profile_response, user_response
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -284,7 +284,7 @@ async def register(
     return TokenResponse(
         access_token=access_token,
         token_type="bearer",
-        user=UserResponse.model_validate(new_user),
+        user=user_response(new_user),
     )
 
 
@@ -329,7 +329,7 @@ async def login(
     return TokenResponse(
         access_token=access_token,
         token_type="bearer",
-        user=UserResponse.model_validate(user),
+        user=user_response(user),
     )
 
 
@@ -351,7 +351,7 @@ async def get_current_user(
             detail="用户不存在",
         )
 
-    return UserProfile.model_validate(user)
+    return user_profile_response(user)
 
 
 @router.post("/logout")

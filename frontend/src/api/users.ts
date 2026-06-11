@@ -5,7 +5,7 @@ export interface UserProfile {
   id: string
   username: string
   email: string
-  avatar_url?: string
+  avatar_url?: string | null
   bio?: string
   birthday?: string
   role_in_family?: string

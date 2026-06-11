@@ -23,7 +23,11 @@ from app.schemas.post import (
     has_post_text,
 )
 from app.core.security import get_current_user
-from app.core.media_utils import normalize_media_item_for_storage, sign_media_item_for_response
+from app.core.media_utils import (
+    normalize_media_item_for_storage,
+    sign_media_item_for_response,
+    signed_media_url,
+)
 from app.api.notifications import build_new_post_message, create_notifications_for_recipients
 from app.tasks.ai_housekeeper import generate_ai_comment
 
@@ -136,7 +140,7 @@ async def create_post(
         id=post.id,
         author_id=post.author_id,
         author_username=current_user.username,
-        author_avatar_url=current_user.avatar_url,
+        author_avatar_url=signed_media_url(current_user.avatar_url),
         content=_response_content(post.content),
         media_urls=[MediaItem(**sign_media_item_for_response(m)) for m in (post.media_urls or [])],
         like_count=0,
@@ -228,7 +232,7 @@ async def get_posts(
             id=post.id,
             author_id=post.author_id,
             author_username=author.username,
-            author_avatar_url=author.avatar_url,
+            author_avatar_url=signed_media_url(author.avatar_url),
             content=_response_content(post.content),
             media_urls=[MediaItem(**sign_media_item_for_response(m)) for m in (post.media_urls or [])],
             like_count=likes_count.get(post.id, 0),
@@ -291,7 +295,7 @@ async def get_post(
         id=post.id,
         author_id=post.author_id,
         author_username=author.username,
-        author_avatar_url=author.avatar_url,
+        author_avatar_url=signed_media_url(author.avatar_url),
         content=_response_content(post.content),
         media_urls=[MediaItem(**sign_media_item_for_response(m)) for m in (post.media_urls or [])],
         like_count=likes_count,
@@ -365,7 +369,9 @@ async def update_post(
         id=post.id,
         author_id=post.author_id,
         author_username=author.username if author else current_user.username,
-        author_avatar_url=author.avatar_url if author else current_user.avatar_url,
+        author_avatar_url=signed_media_url(
+            author.avatar_url if author else current_user.avatar_url
+        ),
         content=_response_content(post.content),
         media_urls=[MediaItem(**sign_media_item_for_response(m)) for m in (post.media_urls or [])],
         like_count=likes_count,

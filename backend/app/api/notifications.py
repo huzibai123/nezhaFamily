@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import desc, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.media_utils import signed_media_url
 from app.core.security import get_current_user
 from app.db.session import get_db
 from app.models.ai import AIPersona
@@ -32,8 +33,8 @@ async def _ai_personas_for_actors(db: AsyncSession, actor_ids: Iterable[UUID]) -
 
 def _notification_actor_display(actor: User, persona: AIPersona | None = None) -> tuple[str, str | None]:
     if actor.is_system and actor.system_type == "ai_persona" and persona:
-        return persona.name, persona.avatar_url
-    return _actor_name(actor), actor.avatar_url
+        return persona.name, signed_media_url(persona.avatar_url)
+    return _actor_name(actor), signed_media_url(actor.avatar_url)
 
 
 def _notification_response(

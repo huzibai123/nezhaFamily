@@ -20,10 +20,14 @@
 
       <section class="profile-card rounded-lg border border-[var(--border)] bg-[var(--surface-card)] p-5 shadow-[var(--shadow-panel)]">
         <div class="grid gap-5 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center">
-          <div
-            class="grid h-20 w-20 place-items-center rounded-xl bg-[var(--accent-soft)] text-3xl font-semibold text-[var(--accent)]"
-          >
-            {{ profile.username.charAt(0).toUpperCase() }}
+          <div class="grid h-20 w-20 place-items-center overflow-hidden rounded-xl bg-[var(--accent-soft)] text-3xl font-semibold text-[var(--accent)]">
+            <img
+              v-if="profileAvatarUrl"
+              :src="profileAvatarUrl"
+              :alt="`${profile.username} 的头像`"
+              class="h-full w-full object-cover"
+            />
+            <span v-else>{{ profileInitial }}</span>
           </div>
           <div class="min-w-0">
             <p class="text-xs font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">家庭成员</p>
@@ -36,7 +40,7 @@
           </div>
           <button
             v-if="isOwn"
-            @click="showEdit = true"
+            @click="openEditModal"
             class="soft-button inline-flex rounded-lg border border-[var(--border)] px-4 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)] hover:text-[var(--text)]"
             type="button"
           >
@@ -103,51 +107,112 @@
 
     <div
       v-if="showEdit"
-      @click="showEdit = false"
-      class="fixed inset-0 z-50 flex items-center justify-center px-4"
+      @click.self="closeEditModal"
+      class="fixed inset-0 z-50 overflow-y-auto px-4 py-6 sm:py-10"
       style="background:rgba(75,40,25,0.38);backdrop-filter:blur(6px)"
     >
-      <div @click.stop class="modal-panel w-full max-w-md space-y-4 rounded-lg border border-[var(--border)] bg-[var(--surface-card)] p-6 shadow-[var(--shadow-panel)]">
-        <h2 class="text-xl font-semibold text-[var(--text)]">编辑个人资料</h2>
-        <div class="space-y-3">
-          <div>
-            <label class="mb-1 block text-xs text-[var(--text-muted)]">个人简介</label>
-            <textarea
-              v-model="editForm.bio"
-              placeholder="介绍一下自己..."
-              rows="3"
-              class="profile-input w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--text)] outline-none"
-            />
+      <div class="flex min-h-full items-start justify-center">
+        <div @click.stop class="modal-panel flex max-h-[calc(100dvh-3rem)] w-full max-w-lg flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-card)] shadow-[var(--shadow-panel)]">
+          <div class="flex items-center justify-between border-b border-[var(--border)] px-5 py-4 sm:px-6">
+            <h2 class="text-lg font-semibold text-[var(--text)]">编辑个人资料</h2>
+            <button
+              @click="closeEditModal"
+              :disabled="saving || avatarUploading"
+              class="soft-button grid h-9 w-9 place-items-center rounded-lg border border-[var(--border)] text-[var(--text-muted)] hover:bg-[var(--surface-elevated)] hover:text-[var(--text)] disabled:opacity-40"
+              type="button"
+              aria-label="关闭"
+            >
+              <X :size="17" stroke-width="2" aria-hidden="true" />
+            </button>
           </div>
-          <div>
-            <label class="mb-1 block text-xs text-[var(--text-muted)]">家庭角色</label>
-            <input
-              v-model="editForm.role_in_family"
-              placeholder="如：爸爸、妈妈、宝宝..."
-              class="profile-input w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--text)] outline-none"
-            />
+
+          <div class="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4 sm:px-6">
+            <div class="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
+              <div class="flex items-center gap-4">
+                <div class="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-xl bg-[var(--accent-soft)] text-2xl font-semibold text-[var(--accent)]">
+                  <img
+                    v-if="editAvatarPreview"
+                    :src="editAvatarPreview"
+                    alt="头像预览"
+                    class="h-full w-full object-cover"
+                  />
+                  <span v-else>{{ profileInitial }}</span>
+                </div>
+                <div class="min-w-0 flex-1">
+                  <p class="text-sm font-medium text-[var(--text)]">头像</p>
+                  <p class="mt-1 text-xs text-[var(--text-muted)]">支持 JPG、PNG、WebP、GIF 图片。</p>
+                  <div class="mt-3 flex flex-wrap gap-2">
+                    <button
+                      @click="avatarInput?.click()"
+                      :disabled="saving || avatarUploading"
+                      class="soft-button inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)] disabled:opacity-40"
+                      type="button"
+                    >
+                      <Camera :size="15" stroke-width="2" aria-hidden="true" />
+                      {{ avatarUploading ? '上传中' : '更换头像' }}
+                    </button>
+                    <button
+                      v-if="editForm.avatar_url"
+                      @click="removeAvatar"
+                      :disabled="saving || avatarUploading"
+                      class="soft-button inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)] disabled:opacity-40"
+                      type="button"
+                    >
+                      <Trash2 :size="15" stroke-width="2" aria-hidden="true" />
+                      移除
+                    </button>
+                  </div>
+                </div>
+                <input
+                  ref="avatarInput"
+                  class="hidden"
+                  type="file"
+                  accept="image/png,image/jpeg,image/webp,image/gif"
+                  @change="handleAvatarUpload"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label class="mb-1 block text-xs text-[var(--text-muted)]">个人简介</label>
+              <textarea
+                v-model="editForm.bio"
+                placeholder="介绍一下自己..."
+                rows="4"
+                class="profile-input w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--text)] outline-none"
+              />
+            </div>
+            <div>
+              <label class="mb-1 block text-xs text-[var(--text-muted)]">家庭角色</label>
+              <input
+                v-model="editForm.role_in_family"
+                placeholder="如：爸爸、妈妈、宝宝..."
+                class="profile-input w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--text)] outline-none"
+              />
+            </div>
+            <div>
+              <label class="mb-1 block text-xs text-[var(--text-muted)]">生日</label>
+              <input
+                v-model="editForm.birthday"
+                type="date"
+                class="profile-input w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--text)] outline-none"
+              />
+            </div>
           </div>
-          <div>
-            <label class="mb-1 block text-xs text-[var(--text-muted)]">生日</label>
-            <input
-              v-model="editForm.birthday"
-              type="date"
-              class="profile-input w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--text)] outline-none"
-            />
+
+          <div class="flex flex-col-reverse gap-3 border-t border-[var(--border)] bg-[var(--surface-card)] px-5 py-4 sm:flex-row sm:px-6">
+            <button @click="closeEditModal" :disabled="saving || avatarUploading" class="flex-1 rounded-lg py-3 text-sm text-[var(--text-muted)] disabled:opacity-40" type="button">
+              取消
+            </button>
+            <button
+              @click="handleSaveEdit"
+              :disabled="saving || avatarUploading"
+              class="primary-button flex-1 rounded-lg bg-[var(--text)] py-3 text-sm font-medium text-[var(--surface)] disabled:opacity-30"
+              type="button"
+            >
+              {{ saving ? '保存中...' : '保存' }}
+            </button>
           </div>
-        </div>
-        <div class="flex gap-3 pt-2">
-          <button @click="showEdit = false" class="flex-1 rounded-lg py-3 text-sm text-[var(--text-muted)]" type="button">
-            取消
-          </button>
-          <button
-            @click="handleSaveEdit"
-            :disabled="saving"
-            class="primary-button flex-1 rounded-lg bg-[var(--text)] py-3 text-sm font-medium text-[var(--surface)] disabled:opacity-30"
-            type="button"
-          >
-            {{ saving ? '保存中...' : '保存' }}
-          </button>
         </div>
       </div>
     </div>
@@ -156,6 +221,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue'
+import { Camera, Trash2, X } from 'lucide-vue-next'
 import { useRoute } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
 import {
@@ -167,9 +233,11 @@ import {
   type UserStats,
 } from '@/api/users'
 import { togglePostLike, type Post } from '@/api/posts'
+import { uploadMedia } from '@/api/media'
 import AppShell from '@/components/AppShell.vue'
 import PostCard from '@/components/PostCard.vue'
 import RightRail from '@/components/RightRail.vue'
+import { mediaUrl } from '@/utils/media'
 
 const route = useRoute()
 const { user, setUser } = useAuth()
@@ -178,15 +246,21 @@ const stats = ref<UserStats>({ post_count: 0, comment_count: 0, like_count: 0 })
 const posts = ref<Post[]>([])
 const showEdit = ref(false)
 const saving = ref(false)
+const avatarUploading = ref(false)
+const avatarInput = ref<HTMLInputElement | null>(null)
 const loading = ref(false)
 const errorMessage = ref('')
 const editForm = reactive({
+  avatar_url: '',
   bio: '',
   role_in_family: '',
   birthday: '',
 })
 
 const isOwn = computed(() => user.value?.id === profile.value?.id)
+const profileInitial = computed(() => profile.value?.username.charAt(0).toUpperCase() || '?')
+const profileAvatarUrl = computed(() => profile.value?.avatar_url ? mediaUrl(profile.value.avatar_url) : '')
+const editAvatarPreview = computed(() => editForm.avatar_url ? mediaUrl(editForm.avatar_url) : '')
 const profileSections = computed(() => [
   { title: profile.value?.role_in_family || '未设置', body: '家庭角色', meta: 'Role' },
   { title: profile.value?.birthday || '未设置', body: '生日', meta: 'Birthday' },
@@ -230,9 +304,7 @@ async function loadProfile(id: string) {
     profile.value = profileResult
     stats.value = statsResult
     posts.value = postsResult.posts
-    editForm.bio = profile.value.bio || ''
-    editForm.role_in_family = profile.value.role_in_family || ''
-    editForm.birthday = profile.value.birthday || ''
+    syncEditForm()
   } catch (e) {
     if (loadId !== currentLoadId) return
     errorMessage.value = typeof e === 'string' ? e : '加载失败'
@@ -250,9 +322,29 @@ function resetProfileState() {
   stats.value = { post_count: 0, comment_count: 0, like_count: 0 }
   posts.value = []
   showEdit.value = false
+  avatarUploading.value = false
+  editForm.avatar_url = ''
   editForm.bio = ''
   editForm.role_in_family = ''
   editForm.birthday = ''
+}
+
+function syncEditForm() {
+  editForm.avatar_url = profile.value?.avatar_url || ''
+  editForm.bio = profile.value?.bio || ''
+  editForm.role_in_family = profile.value?.role_in_family || ''
+  editForm.birthday = profile.value?.birthday || ''
+}
+
+function openEditModal() {
+  syncEditForm()
+  errorMessage.value = ''
+  showEdit.value = true
+}
+
+function closeEditModal() {
+  if (saving.value || avatarUploading.value) return
+  showEdit.value = false
 }
 
 async function handleLike(postItem: Post) {
@@ -266,16 +358,18 @@ async function handleLike(postItem: Post) {
 }
 
 async function handleSaveEdit() {
-  if (!profile.value || saving.value) return
+  if (!profile.value || saving.value || avatarUploading.value) return
   saving.value = true
   errorMessage.value = ''
   try {
     const updated = await updateUserProfile(profile.value.id, {
+      avatar_url: editForm.avatar_url || null,
       bio: editForm.bio.trim() || undefined,
       role_in_family: editForm.role_in_family.trim() || undefined,
       birthday: editForm.birthday || undefined,
     })
     profile.value = updated
+    syncEditForm()
     if (isOwn.value && user.value) {
       setUser({ ...user.value, ...updated })
     }
@@ -285,6 +379,38 @@ async function handleSaveEdit() {
   } finally {
     saving.value = false
   }
+}
+
+async function handleAvatarUpload(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file || avatarUploading.value) return
+
+  if (!file.type.startsWith('image/')) {
+    errorMessage.value = '头像只支持图片文件'
+    return
+  }
+
+  avatarUploading.value = true
+  errorMessage.value = ''
+  try {
+    const response = await uploadMedia([file])
+    const uploaded = response.files[0]
+    if (!uploaded || uploaded.type !== 'image') {
+      errorMessage.value = '头像只支持图片文件'
+      return
+    }
+    editForm.avatar_url = uploaded.url || uploaded.raw_url || ''
+  } catch (e) {
+    errorMessage.value = typeof e === 'string' ? e : '头像上传失败'
+  } finally {
+    avatarUploading.value = false
+  }
+}
+
+function removeAvatar() {
+  editForm.avatar_url = ''
 }
 </script>
 

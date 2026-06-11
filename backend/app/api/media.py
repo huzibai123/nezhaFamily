@@ -178,7 +178,7 @@ def _media_item_response(
         uploader=MediaSearchUploader(
             id=uploader.id,
             username=uploader.username,
-            avatar_url=uploader.avatar_url,
+            avatar_url=signed_media_url(uploader.avatar_url),
             role_in_family=uploader.role_in_family,
         ),
     )
@@ -224,7 +224,7 @@ async def _media_uploaders(
         MediaSearchUploader(
             id=row.id,
             username=row.username,
-            avatar_url=row.avatar_url,
+            avatar_url=signed_media_url(row.avatar_url),
             role_in_family=row.role_in_family,
         )
         for row in uploader_result

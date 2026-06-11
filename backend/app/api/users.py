@@ -20,7 +20,7 @@ from app.schemas.user import (
 )
 from app.schemas.post import PostResponse, PostListResponse, MediaItem
 from app.core.security import get_current_user, get_current_user_id
-from app.core.media_utils import sign_media_item_for_response
+from app.core.media_utils import raw_media_url, sign_media_item_for_response, signed_media_url
 
 router = APIRouter()
 
@@ -32,6 +32,18 @@ async def get_user_by_id(db: AsyncSession, user_id: UUID) -> Optional[User]:
     stmt = select(User).where(User.id == user_id)
     result = await db.execute(stmt)
     return result.scalar_one_or_none()
+
+
+def user_response(user: User) -> UserResponse:
+    response = UserResponse.model_validate(user)
+    response.avatar_url = signed_media_url(user.avatar_url)
+    return response
+
+
+def user_profile_response(user: User) -> UserProfile:
+    response = UserProfile.model_validate(user)
+    response.avatar_url = signed_media_url(user.avatar_url)
+    return response
 
 
 # ==================== API 路由 ====================
@@ -56,7 +68,7 @@ async def get_user_profile(
             detail="用户不存在",
         )
 
-    return UserResponse.model_validate(user)
+    return user_response(user)
 
 
 @router.put("/users/{user_id}", response_model=UserProfile)
@@ -80,13 +92,15 @@ async def update_user_profile(
 
     # 更新字段（只更新提供的字段）
     update_data = profile_data.model_dump(exclude_unset=True)
+    if "avatar_url" in update_data:
+        update_data["avatar_url"] = raw_media_url(update_data["avatar_url"])
     for field, value in update_data.items():
         setattr(current_user, field, value)
 
     await db.commit()
     await db.refresh(current_user)
 
-    return UserProfile.model_validate(current_user)
+    return user_profile_response(current_user)
 
 
 @router.get("/users/{user_id}/posts", response_model=PostListResponse)
@@ -165,7 +179,7 @@ async def get_user_posts(
             id=post.id,
             author_id=post.author_id,
             author_username=user.username,
-            author_avatar_url=user.avatar_url,
+            author_avatar_url=signed_media_url(user.avatar_url),
             content=post.content or "",
             media_urls=[MediaItem(**sign_media_item_for_response(m)) for m in (post.media_urls or [])],
             like_count=likes_count.get(post.id, 0),

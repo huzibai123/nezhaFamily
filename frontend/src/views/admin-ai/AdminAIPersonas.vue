@@ -15,6 +15,45 @@
         class="persona-card rounded-xl border border-[var(--border)] bg-[var(--surface-panel)] p-4"
       >
         <div v-if="personaDrafts[persona.id]" class="space-y-4">
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div class="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-xl bg-[var(--accent-soft)] text-2xl font-semibold text-[var(--accent)]">
+              <img
+                v-if="personaAvatarUrl(persona)"
+                :src="personaAvatarUrl(persona)"
+                :alt="`${personaDrafts[persona.id].name || persona.name} 的头像`"
+                class="h-full w-full object-cover"
+              />
+              <span v-else>{{ personaInitial(persona) }}</span>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-medium text-[var(--text)]">角色头像</p>
+              <p class="mt-1 text-xs text-[var(--text-muted)]">会显示在 AI 评论、点赞和通知里。</p>
+              <div class="mt-3 flex flex-wrap gap-2">
+                <label class="soft-button inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)]">
+                  <Camera :size="15" stroke-width="2" aria-hidden="true" />
+                  {{ uploadingPersonaId === persona.id ? '上传中' : '更换头像' }}
+                  <input
+                    class="hidden"
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    :disabled="uploadingPersonaId === persona.id || aiPersonaSavingId === persona.id"
+                    @change="uploadPersonaAvatar(persona, $event)"
+                  />
+                </label>
+                <button
+                  v-if="personaDrafts[persona.id].avatar_url"
+                  @click="clearPersonaAvatar(persona)"
+                  :disabled="uploadingPersonaId === persona.id || aiPersonaSavingId === persona.id"
+                  class="soft-button inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)] disabled:opacity-40"
+                  type="button"
+                >
+                  <Trash2 :size="15" stroke-width="2" aria-hidden="true" />
+                  移除
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div class="grid gap-3 sm:grid-cols-[minmax(0,1fr)_10rem]">
             <label class="ai-field">
               <span>名称</span>
@@ -89,6 +128,43 @@
     </div>
 
     <div class="mt-6 rounded-xl border border-dashed border-[var(--border)] bg-[var(--surface)] p-4">
+      <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div class="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-xl bg-[var(--accent-soft)] text-xl font-semibold text-[var(--accent)]">
+          <img
+            v-if="newPersonaAvatarUrl"
+            :src="newPersonaAvatarUrl"
+            alt="新 AI 角色头像预览"
+            class="h-full w-full object-cover"
+          />
+          <span v-else>{{ newPersonaInitial }}</span>
+        </div>
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-medium text-[var(--text)]">新角色头像</p>
+          <div class="mt-2 flex flex-wrap gap-2">
+            <label class="soft-button inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)]">
+              <Camera :size="15" stroke-width="2" aria-hidden="true" />
+              {{ newPersonaAvatarUploading ? '上传中' : '上传头像' }}
+              <input
+                class="hidden"
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                :disabled="newPersonaAvatarUploading || aiPersonaCreating"
+                @change="uploadNewPersonaAvatar"
+              />
+            </label>
+            <button
+              v-if="newPersonaDraft.avatar_url"
+              @click="newPersonaDraft.avatar_url = ''"
+              :disabled="newPersonaAvatarUploading || aiPersonaCreating"
+              class="soft-button inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)] disabled:opacity-40"
+              type="button"
+            >
+              <Trash2 :size="15" stroke-width="2" aria-hidden="true" />
+              移除
+            </button>
+          </div>
+        </div>
+      </div>
       <div class="grid gap-3 lg:grid-cols-[minmax(0,0.8fr)_10rem_minmax(0,1fr)_auto]">
         <input v-model="newPersonaDraft.name" class="ai-input" placeholder="新角色名" />
         <select v-model="newPersonaDraft.persona_type" class="ai-input">
@@ -118,17 +194,93 @@
 </template>
 
 <script setup lang="ts">
-import { Check, Plus, Power } from 'lucide-vue-next'
+import { computed, ref } from 'vue'
+import { Camera, Check, Plus, Power, Trash2 } from 'lucide-vue-next'
+import { uploadMedia } from '@/api/media'
+import type { AIPersona } from '@/api/admin'
+import { mediaUrl } from '@/utils/media'
 import { useAdminAI } from './useAdminAI'
 
 const {
   aiPersonas,
   personaDrafts,
   newPersonaDraft,
+  message,
   aiPersonaSavingId,
   aiPersonaCreating,
   saveAIPersona,
   addAIPersona,
   disableAIPersona,
 } = useAdminAI()
+
+const uploadingPersonaId = ref('')
+const newPersonaAvatarUploading = ref(false)
+const newPersonaAvatarUrl = computed(() =>
+  newPersonaDraft.avatar_url ? mediaUrl(newPersonaDraft.avatar_url) : ''
+)
+const newPersonaInitial = computed(() =>
+  (newPersonaDraft.name.trim().charAt(0) || 'A').toUpperCase()
+)
+
+function personaAvatarUrl(persona: AIPersona): string {
+  const avatar = personaDrafts[persona.id]?.avatar_url || persona.avatar_url || ''
+  return avatar ? mediaUrl(avatar) : ''
+}
+
+function personaInitial(persona: AIPersona): string {
+  const name = personaDrafts[persona.id]?.name || persona.name || 'A'
+  return name.charAt(0).toUpperCase()
+}
+
+function clearPersonaAvatar(persona: AIPersona) {
+  personaDrafts[persona.id].avatar_url = ''
+}
+
+async function uploadImageFile(file: File): Promise<string> {
+  if (!file.type.startsWith('image/')) {
+    throw new Error('头像只支持图片文件')
+  }
+  const response = await uploadMedia([file])
+  const uploaded = response.files[0]
+  if (!uploaded || uploaded.type !== 'image') {
+    throw new Error('头像只支持图片文件')
+  }
+  return uploaded.url || uploaded.raw_url || ''
+}
+
+async function uploadPersonaAvatar(persona: AIPersona, event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file || uploadingPersonaId.value) return
+
+  uploadingPersonaId.value = persona.id
+  message.value = ''
+  try {
+    personaDrafts[persona.id].avatar_url = await uploadImageFile(file)
+    message.value = '头像已上传，保存角色后生效'
+  } catch (error) {
+    message.value = error instanceof Error ? error.message : '头像上传失败'
+  } finally {
+    uploadingPersonaId.value = ''
+  }
+}
+
+async function uploadNewPersonaAvatar(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file || newPersonaAvatarUploading.value) return
+
+  newPersonaAvatarUploading.value = true
+  message.value = ''
+  try {
+    newPersonaDraft.avatar_url = await uploadImageFile(file)
+    message.value = '头像已上传，添加角色后生效'
+  } catch (error) {
+    message.value = error instanceof Error ? error.message : '头像上传失败'
+  } finally {
+    newPersonaAvatarUploading.value = false
+  }
+}
 </script>

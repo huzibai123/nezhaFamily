@@ -269,5 +269,5 @@ async def test_ai_notification_response_uses_persona_display_name(
     assert response.status_code == 200
     payload = response.json()["notifications"][0]
     assert payload["actor_username"] == "小金毛"
-    assert payload["actor_avatar_url"] == "/media/ai-dog.png"
+    assert payload["actor_avatar_url"].startswith("/media/ai-dog.png?token=")
     assert payload["actor_username"] != "ai_61855"

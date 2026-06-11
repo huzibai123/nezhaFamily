@@ -381,3 +381,34 @@ async def test_get_other_user_profile_does_not_expose_invite_code(
     assert data["email"] == "admin@test.com"
     assert "invite_code" not in data
     assert "invited_by" not in data
+
+
+@pytest.mark.asyncio
+async def test_update_profile_avatar_stores_raw_and_returns_signed_url(
+    client: AsyncClient,
+    db: AsyncSession,
+    test_user: User,
+):
+    """成员更新头像时数据库保存原始媒体路径，响应返回可访问签名地址。"""
+    token = create_access_token({"user_id": str(test_user.id)})
+
+    response = await client.put(
+        f"/api/v1/users/{test_user.id}",
+        json={"avatar_url": "/media/avatars/me.png?token=temporary"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["avatar_url"].startswith("/media/avatars/me.png?token=")
+
+    await db.refresh(test_user)
+    assert test_user.avatar_url == "/media/avatars/me.png"
+
+    me_response = await client.get(
+        "/api/v1/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert me_response.status_code == 200
+    assert me_response.json()["avatar_url"].startswith("/media/avatars/me.png?token=")

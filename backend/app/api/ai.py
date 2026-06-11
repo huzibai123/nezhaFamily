@@ -10,6 +10,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_admin
+from app.core.media_utils import raw_media_url, signed_media_url
 from app.core.security import get_current_user
 from app.db.session import get_db
 from app.models.ai import (
@@ -110,7 +111,7 @@ def persona_response(persona: AIPersona) -> AIPersonaResponse:
         id=persona.id,
         user_id=persona.user_id,
         name=persona.name,
-        avatar_url=persona.avatar_url,
+        avatar_url=signed_media_url(persona.avatar_url),
         persona_type=persona.persona_type,
         tone=persona.tone,
         bio=persona.bio,
@@ -321,6 +322,8 @@ async def create_ai_persona(
 ):
     user = await create_system_user_for_persona(db, payload.name, payload.persona_type)
     persona_data = payload.model_dump(exclude={"auto_like_enabled"})
+    if "avatar_url" in persona_data:
+        persona_data["avatar_url"] = raw_media_url(persona_data["avatar_url"])
     persona = AIPersona(user_id=user.id, **persona_data)
     persona.auto_like_enabled = payload.auto_like_enabled
     db.add(persona)
@@ -340,7 +343,10 @@ async def update_ai_persona(
     if not persona:
         raise HTTPException(status_code=404, detail="AI 角色不存在")
 
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    update_data = payload.model_dump(exclude_unset=True)
+    if "avatar_url" in update_data:
+        update_data["avatar_url"] = raw_media_url(update_data["avatar_url"])
+    for field, value in update_data.items():
         setattr(persona, field, value)
     if persona.user_id:
         user = await db.get(User, persona.user_id)

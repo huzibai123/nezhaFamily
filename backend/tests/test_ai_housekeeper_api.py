@@ -261,6 +261,41 @@ async def test_ai_persona_auto_like_enabled_round_trips_in_metadata(
     assert persona.persona_metadata["auto_like_enabled"] is True
 
 
+async def test_ai_persona_avatar_stores_raw_and_returns_signed_url(
+    client: AsyncClient,
+    db: AsyncSession,
+    test_admin: User,
+):
+    create_response = await client.post(
+        "/api/v1/admin/ai/personas",
+        json={
+            "name": "头像小助手",
+            "persona_type": "helper",
+            "avatar_url": "/media/ai/helper.png?token=temporary",
+        },
+        headers=auth_headers(test_admin),
+    )
+
+    assert create_response.status_code == 201
+    created = create_response.json()
+    assert created["avatar_url"].startswith("/media/ai/helper.png?token=")
+
+    persona = await db.get(AIPersona, UUID(created["id"]))
+    assert persona is not None
+    assert persona.avatar_url == "/media/ai/helper.png"
+
+    update_response = await client.patch(
+        f"/api/v1/admin/ai/personas/{created['id']}",
+        json={"avatar_url": "/media/ai/helper-new.png?token=temporary"},
+        headers=auth_headers(test_admin),
+    )
+
+    assert update_response.status_code == 200
+    assert update_response.json()["avatar_url"].startswith("/media/ai/helper-new.png?token=")
+    await db.refresh(persona)
+    assert persona.avatar_url == "/media/ai/helper-new.png"
+
+
 async def test_ai_search_requires_enabled_provider(
     client: AsyncClient,
     test_user: User,
@@ -1566,7 +1601,7 @@ async def test_ai_comment_response_uses_persona_display_name(
     assert response.status_code == 200
     payload = response.json()["comments"][0]
     assert payload["author_username"] == "记忆嬷嬷"
-    assert payload["author_avatar_url"] == "/media/ai-nanny.png"
+    assert payload["author_avatar_url"].startswith("/media/ai-nanny.png?token=")
     assert payload["author_username"] != "ai_61855"
 
 
