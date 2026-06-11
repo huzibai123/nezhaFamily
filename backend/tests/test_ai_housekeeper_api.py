@@ -25,6 +25,27 @@ def auth_headers(user: User) -> dict[str, str]:
     return {"Authorization": f"Bearer {create_access_token({'user_id': str(user.id)})}"}
 
 
+def active_provider() -> AIProviderConfig:
+    return AIProviderConfig(
+        name="测试模型",
+        base_url="https://api.example.com/v1",
+        api_key_encrypted="secret",
+        text_model="gpt-test",
+        enabled=True,
+        status="active",
+    )
+
+
+async def ai_comment_count(db: AsyncSession, post_id) -> int:
+    result = await db.execute(
+        select(Comment.id).where(
+            Comment.post_id == post_id,
+            Comment.is_ai_generated.is_(True),
+        )
+    )
+    return len(result.scalars().all())
+
+
 async def test_ai_status_creates_default_provider_and_personas(
     client: AsyncClient,
     test_admin: User,
@@ -142,6 +163,43 @@ async def test_provider_connection_failure_pauses_and_notifies_admin(
     assert notification.type == "ai_paused"
 
 
+async def test_disabled_provider_connection_failure_only_records_error(
+    db: AsyncSession,
+    test_admin: User,
+    monkeypatch,
+):
+    provider = AIProviderConfig(
+        name="测试模型",
+        base_url="https://api.example.com/v1",
+        api_key_encrypted="secret",
+        text_model="deepseek-chat",
+        enabled=False,
+        status="disabled",
+    )
+    db.add(provider)
+    await db.commit()
+    await db.refresh(provider)
+
+    class FailingClient:
+        async def chat(self, *args, **kwargs):
+            raise AIProviderError("鉴权失败", status_code=401)
+
+    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider: FailingClient())
+
+    ok, message = await ai_housekeeper.test_provider_connection(db, provider)
+    await db.commit()
+
+    assert ok is False
+    assert "鉴权失败" in message
+    assert provider.enabled is False
+    assert provider.status == "disabled"
+    assert provider.last_error == "鉴权失败"
+    assert provider.last_checked_at is not None
+
+    result = await db.execute(select(Notification).where(Notification.recipient_id == test_admin.id))
+    assert result.scalar_one_or_none() is None
+
+
 async def test_provider_update_hides_and_encrypts_api_key(
     client: AsyncClient,
     db: AsyncSession,
@@ -171,6 +229,225 @@ async def test_provider_update_hides_and_encrypts_api_key(
     assert provider.api_key_encrypted != "secret-key"
     assert provider.api_key_encrypted.startswith("fernet:")
     assert ai_housekeeper.resolve_provider_api_key(provider) == "secret-key"
+
+
+async def test_provider_update_preserves_existing_key_when_api_key_missing_or_blank(
+    client: AsyncClient,
+    db: AsyncSession,
+    test_admin: User,
+):
+    provider = AIProviderConfig(
+        name="旧配置",
+        base_url="https://api.example.com/v1",
+        api_key_encrypted=ai_housekeeper.encrypt_ai_api_key("old-key"),
+        text_model="gpt-old",
+        enabled=True,
+        status="active",
+    )
+    db.add(provider)
+    await db.commit()
+
+    base_payload = {
+        "name": "新配置",
+        "base_url": "https://api.example.com/v1",
+        "text_model": "gpt-new",
+        "vision_model": None,
+        "timeout_seconds": 30,
+        "enabled": True,
+    }
+
+    response = await client.put(
+        "/api/v1/admin/ai/providers/default",
+        json=base_payload,
+        headers=auth_headers(test_admin),
+    )
+    assert response.status_code == 200
+    await db.refresh(provider)
+    assert ai_housekeeper.resolve_provider_api_key(provider) == "old-key"
+
+    response = await client.put(
+        "/api/v1/admin/ai/providers/default",
+        json={**base_payload, "api_key": "   "},
+        headers=auth_headers(test_admin),
+    )
+    assert response.status_code == 200
+    await db.refresh(provider)
+    assert ai_housekeeper.resolve_provider_api_key(provider) == "old-key"
+
+
+async def test_provider_update_clear_api_key_and_new_key_precedence(
+    client: AsyncClient,
+    db: AsyncSession,
+    test_admin: User,
+):
+    provider = AIProviderConfig(
+        name="旧配置",
+        base_url="https://api.example.com/v1",
+        api_key_encrypted=ai_housekeeper.encrypt_ai_api_key("old-key"),
+        text_model="gpt-old",
+        enabled=True,
+        status="active",
+    )
+    db.add(provider)
+    await db.commit()
+
+    payload = {
+        "name": "新配置",
+        "base_url": "https://api.example.com/v1",
+        "text_model": "gpt-new",
+        "vision_model": None,
+        "timeout_seconds": 30,
+        "enabled": True,
+    }
+
+    response = await client.put(
+        "/api/v1/admin/ai/providers/default",
+        json={**payload, "clear_api_key": True},
+        headers=auth_headers(test_admin),
+    )
+    assert response.status_code == 200
+    await db.refresh(provider)
+    assert provider.api_key_encrypted is None
+    assert provider.status == "disabled"
+
+    response = await client.put(
+        "/api/v1/admin/ai/providers/default",
+        json={**payload, "clear_api_key": True, "api_key": "new-key"},
+        headers=auth_headers(test_admin),
+    )
+    assert response.status_code == 200
+    await db.refresh(provider)
+    assert ai_housekeeper.resolve_provider_api_key(provider) == "new-key"
+    assert provider.status == "active"
+
+
+async def test_provider_response_reports_api_key_source(
+    client: AsyncClient,
+    db: AsyncSession,
+    test_admin: User,
+    monkeypatch,
+):
+    monkeypatch.setattr(ai_housekeeper.settings, "AI_API_KEY", "")
+    response = await client.get(
+        "/api/v1/admin/ai/status",
+        headers=auth_headers(test_admin),
+    )
+    assert response.status_code == 200
+    assert response.json()["provider"]["api_key_source"] == "none"
+
+    monkeypatch.setattr(ai_housekeeper.settings, "AI_API_KEY", "env-key")
+    response = await client.get(
+        "/api/v1/admin/ai/status",
+        headers=auth_headers(test_admin),
+    )
+    assert response.status_code == 200
+    provider_data = response.json()["provider"]
+    assert provider_data["has_api_key"] is True
+    assert provider_data["api_key_source"] == "environment"
+
+    provider = await ai_housekeeper.get_or_create_provider(db)
+    provider.api_key_encrypted = ai_housekeeper.encrypt_ai_api_key("db-key")
+    await db.commit()
+
+    response = await client.get(
+        "/api/v1/admin/ai/status",
+        headers=auth_headers(test_admin),
+    )
+    assert response.status_code == 200
+    assert response.json()["provider"]["api_key_source"] == "database"
+
+
+async def test_disabled_provider_connection_success_does_not_enable(
+    db: AsyncSession,
+    monkeypatch,
+):
+    provider = AIProviderConfig(
+        name="测试模型",
+        base_url="https://api.example.com/v1",
+        api_key_encrypted="secret",
+        text_model="gpt-test",
+        enabled=False,
+        status="disabled",
+    )
+    db.add(provider)
+    await db.commit()
+
+    class FakeClient:
+        async def chat(self, *args, **kwargs):
+            return AIChatResult(content="OK", raw={})
+
+    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider: FakeClient())
+
+    ok, message = await ai_housekeeper.test_provider_connection(db, provider)
+    await db.commit()
+
+    assert ok is True
+    assert message == "连接可用，当前未启用"
+    assert provider.enabled is False
+    assert provider.status == "disabled"
+    assert provider.last_error is None
+
+
+async def test_provider_save_then_mock_test_success_and_resets_paused_error(
+    client: AsyncClient,
+    db: AsyncSession,
+    test_admin: User,
+    monkeypatch,
+):
+    provider = AIProviderConfig(
+        name="旧配置",
+        base_url="https://api.example.com/v1",
+        api_key_encrypted=ai_housekeeper.encrypt_ai_api_key("old-key"),
+        text_model="gpt-old",
+        enabled=False,
+        status="paused_error",
+        failure_count=3,
+        last_error="旧错误",
+        paused_reason="旧暂停",
+        notified_pause_at=ai_housekeeper.now_utc(),
+    )
+    db.add(provider)
+    await db.commit()
+
+    update_response = await client.put(
+        "/api/v1/admin/ai/providers/default",
+        json={
+            "name": "恢复配置",
+            "base_url": "https://api.example.com/v1/chat/completions",
+            "api_key": "fresh-key",
+            "text_model": "gpt-fresh",
+            "vision_model": None,
+            "timeout_seconds": 30,
+            "enabled": True,
+        },
+        headers=auth_headers(test_admin),
+    )
+    assert update_response.status_code == 200
+    data = update_response.json()
+    assert data["status"] == "active"
+    assert data["base_url"] == "https://api.example.com/v1"
+    assert data["last_error"] is None
+    assert data["paused_reason"] is None
+
+    class FakeClient:
+        async def chat(self, *args, **kwargs):
+            return AIChatResult(content="OK", raw={})
+
+    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider: FakeClient())
+
+    test_response = await client.post(
+        "/api/v1/admin/ai/providers/default/test",
+        headers=auth_headers(test_admin),
+    )
+
+    assert test_response.status_code == 200
+    assert test_response.json() == {
+        "ok": True,
+        "status": "active",
+        "message": "连接测试成功",
+    }
+    await db.refresh(provider)
+    assert ai_housekeeper.resolve_provider_api_key(provider) == "fresh-key"
 
 
 async def test_provider_test_handles_invalid_encrypted_key(
@@ -205,14 +482,7 @@ async def test_generate_ai_comment_creates_positive_comment(
     test_user: User,
     monkeypatch,
 ):
-    provider = AIProviderConfig(
-        name="测试模型",
-        base_url="https://api.example.com/v1",
-        api_key_encrypted="secret",
-        text_model="gpt-test",
-        enabled=True,
-        status="active",
-    )
+    provider = active_provider()
     post = Post(author_id=test_user.id, content="宝宝今天第一次自己走了两步", media_urls=[])
     db.add_all([provider, post])
     await db.commit()
@@ -233,6 +503,155 @@ async def test_generate_ai_comment_creates_positive_comment(
     assert comment.is_ai_generated is True
     assert comment.ai_persona_id is not None
     assert "温暖" in comment.content or "开心" in comment.content
+
+
+@pytest.mark.parametrize(
+    ("enabled", "status"),
+    [
+        (False, "disabled"),
+        (False, "paused_billing_or_auth"),
+        (True, "paused_rate_limit"),
+    ],
+)
+async def test_generate_ai_comment_skips_when_ai_off_or_paused(
+    db: AsyncSession,
+    test_user: User,
+    enabled: bool,
+    status: str,
+    monkeypatch,
+):
+    provider = active_provider()
+    provider.enabled = enabled
+    provider.status = status
+    post = Post(author_id=test_user.id, content="今天去公园玩了", media_urls=[])
+    db.add_all([provider, post])
+    await db.commit()
+    await db.refresh(post)
+
+    class UnexpectedClient:
+        async def chat(self, *args, **kwargs):
+            raise AssertionError("AI client should not be called")
+
+    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider: UnexpectedClient())
+
+    comment = await ai_housekeeper.generate_ai_comment_for_post(db, post.id)
+    await db.commit()
+
+    assert comment is None
+    assert await ai_comment_count(db, post.id) == 0
+
+
+async def test_generate_ai_comment_skips_when_all_auto_comment_personas_disabled(
+    db: AsyncSession,
+    test_user: User,
+    monkeypatch,
+):
+    provider = active_provider()
+    post = Post(author_id=test_user.id, content="今天吃了甜甜的蛋糕", media_urls=[])
+    db.add_all([provider, post])
+    await db.commit()
+    await db.refresh(post)
+    personas = await ai_housekeeper.ensure_default_personas(db)
+    for persona in personas:
+        persona.auto_comment_enabled = False
+    await db.commit()
+
+    class UnexpectedClient:
+        async def chat(self, *args, **kwargs):
+            raise AssertionError("AI client should not be called")
+
+    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider: UnexpectedClient())
+
+    comment = await ai_housekeeper.generate_ai_comment_for_post(db, post.id)
+    await db.commit()
+
+    assert comment is None
+    assert await ai_comment_count(db, post.id) == 0
+
+
+async def test_generate_ai_comment_is_idempotent_per_post(
+    db: AsyncSession,
+    test_user: User,
+    monkeypatch,
+):
+    provider = active_provider()
+    post = Post(author_id=test_user.id, content="宝宝今天第一次自己搭积木", media_urls=[])
+    db.add_all([provider, post])
+    await db.commit()
+    await db.refresh(post)
+    await ai_housekeeper.ensure_default_personas(db)
+    await db.commit()
+
+    class FakeClient:
+        calls = 0
+
+        async def chat(self, *args, **kwargs):
+            self.calls += 1
+            return AIChatResult(content=f"第{self.calls}次也很温暖！", raw={})
+
+    fake_client = FakeClient()
+    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider: fake_client)
+
+    first = await ai_housekeeper.generate_ai_comment_for_post(db, post.id)
+    await db.commit()
+    second = await ai_housekeeper.generate_ai_comment_for_post(db, post.id)
+    await db.commit()
+
+    assert first is not None
+    assert second is None
+    assert fake_client.calls == 1
+    assert await ai_comment_count(db, post.id) == 1
+
+
+@pytest.mark.parametrize(
+    ("status_code", "expected_status"),
+    [
+        (401, "paused_billing_or_auth"),
+        (402, "paused_billing_or_auth"),
+        (403, "paused_billing_or_auth"),
+        (429, "paused_rate_limit"),
+    ],
+)
+async def test_generate_ai_comment_provider_auth_billing_or_rate_errors_pause_and_notify(
+    db: AsyncSession,
+    test_admin: User,
+    test_user: User,
+    status_code: int,
+    expected_status: str,
+    monkeypatch,
+):
+    provider = active_provider()
+    post = Post(author_id=test_user.id, content="今天拍了一张很可爱的照片", media_urls=[])
+    db.add_all([provider, post])
+    await db.commit()
+    await db.refresh(provider)
+    await db.refresh(post)
+    await ai_housekeeper.ensure_default_personas(db)
+    await db.commit()
+
+    class FailingClient:
+        async def chat(self, *args, **kwargs):
+            raise AIProviderError("模型不可用", status_code=status_code)
+
+    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider: FailingClient())
+
+    comment = await ai_housekeeper.generate_ai_comment_for_post(db, post.id)
+    await db.commit()
+
+    assert comment is None
+    assert await ai_comment_count(db, post.id) == 0
+    await db.refresh(provider)
+    assert provider.enabled is False
+    assert provider.status == expected_status
+    result = await db.execute(
+        select(Notification).where(
+            Notification.recipient_id == test_admin.id,
+            Notification.type == "ai_paused",
+            Notification.target_id == provider.id,
+        )
+    )
+    notification = result.scalar_one_or_none()
+    assert notification is not None
 
 
 async def test_admin_can_edit_ai_comment_but_member_cannot(
@@ -289,6 +708,7 @@ async def test_admin_can_edit_ai_comment_but_member_cannot(
 
 async def test_history_learning_job_requires_enabled_ai(
     client: AsyncClient,
+    db: AsyncSession,
     test_admin: User,
 ):
     response = await client.post(
@@ -299,6 +719,8 @@ async def test_history_learning_job_requires_enabled_ai(
 
     assert response.status_code == 400
     assert "AI 管家尚未启用" in response.json()["detail"]
+    result = await db.execute(select(AIJob))
+    assert result.scalars().all() == []
 
 
 async def test_ai_job_enqueue_failure_marks_job_failed(
@@ -331,7 +753,9 @@ async def test_ai_job_enqueue_failure_marks_job_failed(
 
     assert response.status_code == 503
     result = await db.execute(select(AIJob))
-    job = result.scalar_one()
+    jobs = list(result.scalars().all())
+    assert len(jobs) == 1
+    job = jobs[0]
     assert job.status == "failed"
     assert "任务队列不可用" in (job.error_message or "")
 

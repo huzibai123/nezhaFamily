@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Optional
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 
@@ -34,7 +35,7 @@ class OpenAICompatibleClient:
         model: str,
         timeout_seconds: int,
     ) -> None:
-        self.base_url = base_url.rstrip("/")
+        self.base_url = _normalize_base_url(base_url)
         self.api_key = api_key
         self.model = model
         self.timeout_seconds = timeout_seconds
@@ -99,3 +100,12 @@ def _extract_error_message(response: httpx.Response) -> str:
     except ValueError:
         pass
     return f"模型服务返回 HTTP {response.status_code}"
+
+
+def _normalize_base_url(value: str) -> str:
+    cleaned = value.strip().rstrip("/")
+    parsed = urlparse(cleaned)
+    path = parsed.path.rstrip("/")
+    if path.endswith("/chat/completions"):
+        path = path.removesuffix("/chat/completions").rstrip("/")
+    return urlunparse((parsed.scheme, parsed.netloc, path, "", "", ""))

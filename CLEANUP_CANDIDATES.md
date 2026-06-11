@@ -114,6 +114,7 @@
 | `CLAUDE.md` | 仍提到前端存在两套 axios/token key，但当前已统一到 `frontend/src/api/index.ts` 和 `localStorage('token')` |
 | `CLAUDE.md` | 仍提到 `get_current_user` 重复实现问题；当前 `core/dependencies.py` 已复用 `core/security.py` |
 | `CLAUDE.md` | 仍提到媒体静态服务/Celery 任务缺失；当前已有 `media.public_router` 和 `compress_image` / `generate_thumbnail` |
+| `docker/README.md`、`docker/DEPLOY.md` | 两份 Docker 部署文档内容高度重复，当前需要双写同类部署说明 | 后续可合并为单一权威部署文档，另一份改为跳转说明 |
 
 ## 清理前验证建议
 

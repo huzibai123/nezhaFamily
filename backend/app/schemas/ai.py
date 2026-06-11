@@ -4,7 +4,7 @@ AI 家庭管家相关 Schema
 from datetime import datetime
 from typing import Any, Literal, Optional
 from uuid import UUID
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -17,6 +17,7 @@ AIProviderStatus = Literal[
     "paused_error",
 ]
 AIJobStatus = Literal["pending", "running", "completed", "failed", "skipped"]
+AIProviderKeySource = Literal["database", "environment", "none"]
 
 
 class AIProviderBase(BaseModel):
@@ -34,17 +35,22 @@ class AIProviderBase(BaseModel):
         parsed = urlparse(cleaned)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("Base URL 必须是有效的 http/https 地址")
-        return cleaned
+        path = parsed.path.rstrip("/")
+        if path.endswith("/chat/completions"):
+            path = path.removesuffix("/chat/completions").rstrip("/")
+        return urlunparse((parsed.scheme, parsed.netloc, path, "", "", ""))
 
 
 class AIProviderUpdate(AIProviderBase):
     api_key: Optional[str] = Field(None, max_length=5000)
+    clear_api_key: bool = False
 
 
 class AIProviderResponse(AIProviderBase):
     id: UUID
     status: AIProviderStatus | str
     has_api_key: bool
+    api_key_source: AIProviderKeySource
     failure_count: int
     last_error: Optional[str] = None
     paused_reason: Optional[str] = None

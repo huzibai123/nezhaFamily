@@ -189,6 +189,48 @@ pip show pytest-asyncio
 docker-compose up -d
 # 访问：
 # - 前端：http://localhost:3000
-# - 后端 API 文档：http://localhost:8000/docs
+# - 后端 API 文档：http://localhost:8000/api/docs
 # - 数据库：localhost:5432
 ```
+
+## 部署配置验收命令
+
+部署配置变更后，至少执行以下 dry-run 检查；生产命令使用一次性环境变量，避免把临时密钥写入 `.env`。
+
+```bash
+cd /Users/baiyi/myCode/nezhaFamily
+
+# 后端测试
+docker compose run --rm backend pytest -q
+
+# 前端构建
+npm --prefix frontend run build
+
+# 开发 Compose 配置
+docker compose config
+
+# 生产 Compose 配置
+POSTGRES_PASSWORD=change-me-postgres \
+REDIS_PASSWORD=change-me-redis \
+SECRET_KEY=change-me-secret-key-32-bytes-min \
+ALLOWED_ORIGINS=https://family.example.com \
+DOMAIN=family.example.com \
+ADMIN_EMAIL=admin@example.com \
+TRUSTED_PROXY_COUNT=1 \
+AI_ENABLED=false \
+docker compose -f docker-compose.prod.yml config
+
+# Caddy 配置校验
+docker run --rm -v "$PWD/docker/Caddyfile.dev:/etc/caddy/Caddyfile:ro" caddy:2.7-alpine caddy validate --config /etc/caddy/Caddyfile
+docker run --rm \
+  -e DOMAIN=family.example.com \
+  -e EMAIL=admin@example.com \
+  -v "$PWD/docker/Caddyfile:/etc/caddy/Caddyfile:ro" \
+  caddy:2.7-alpine caddy validate --config /etc/caddy/Caddyfile
+
+# 可选 smoke test
+docker compose up -d
+curl -fsS http://localhost:8080/health || curl -fsS http://localhost:8080/
+```
+
+如果本机 `8080`/`8443` 已被占用，先用 `lsof -i :8080` 和 `lsof -i :8443` 定位占用；临时改 Compose 端口做验证时不要提交该端口改动。
