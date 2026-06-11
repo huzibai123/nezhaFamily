@@ -275,6 +275,28 @@ def test_cleanup_expired_media_trash_task_uses_default_retention(monkeypatch):
     assert cutoff_seen is not None
 
 
+def test_media_trash_retention_rejects_manual_zero_days():
+    """手动传入 0 天保留期会立即失败，避免误删刚进入回收站的文件。"""
+    with pytest.raises(ValueError, match="retention_days must be at least 1"):
+        media_processing.get_media_trash_retention_days(0)
+
+
+def test_media_trash_retention_env_zero_falls_back_to_default(monkeypatch):
+    """环境变量配置为 0 时回退默认值，避免启动后执行危险清理窗口。"""
+    monkeypatch.setenv("MEDIA_TRASH_RETENTION_DAYS", "0")
+
+    assert (
+        media_processing.get_media_trash_retention_days()
+        == media_processing.DEFAULT_MEDIA_TRASH_RETENTION_DAYS
+    )
+
+
+def test_cleanup_expired_media_trash_has_task_timeout():
+    """媒体回收站清理任务必须有局部超时，避免长时间占用 worker。"""
+    assert media_processing.cleanup_expired_media_trash.time_limit == 3600
+    assert media_processing.cleanup_expired_media_trash.soft_time_limit == 3300
+
+
 def test_cleanup_expired_media_trash_skips_unsafe_paths(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

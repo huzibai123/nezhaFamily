@@ -124,6 +124,8 @@ services:
             CELERY_IMAGE_TASK_SOFT_TIME_LIMIT: 540
             CELERY_AI_TASK_TIME_LIMIT: 180
             CELERY_AI_TASK_SOFT_TIME_LIMIT: 150
+            CELERY_MEDIA_CLEANUP_TASK_TIME_LIMIT: 3600
+            CELERY_MEDIA_CLEANUP_TASK_SOFT_TIME_LIMIT: 3300
         volumes:
             - ./backend:/app
             - media_files:/app/media
@@ -182,6 +184,8 @@ services:
             CELERY_IMAGE_TASK_SOFT_TIME_LIMIT: 540
             CELERY_AI_TASK_TIME_LIMIT: 180
             CELERY_AI_TASK_SOFT_TIME_LIMIT: 150
+            CELERY_MEDIA_CLEANUP_TASK_TIME_LIMIT: 3600
+            CELERY_MEDIA_CLEANUP_TASK_SOFT_TIME_LIMIT: 3300
         volumes:
             - ./backend:/app
             - media_files:/app/media

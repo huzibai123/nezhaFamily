@@ -124,6 +124,8 @@ def test_env_example_documents_runtime_and_proxy_settings():
     assert "CELERY_WORKER_PREFETCH_MULTIPLIER=1" in content
     assert "CELERY_AI_TASK_TIME_LIMIT=180" in content
     assert "CELERY_AI_TASK_SOFT_TIME_LIMIT=150" in content
+    assert "CELERY_MEDIA_CLEANUP_TASK_TIME_LIMIT=3600" in content
+    assert "CELERY_MEDIA_CLEANUP_TASK_SOFT_TIME_LIMIT=3300" in content
 
 
 def test_compose_files_make_runtime_settings_explicit():
@@ -141,6 +143,12 @@ def test_compose_files_make_runtime_settings_explicit():
         assert "CELERY_TASK_TIME_LIMIT" in content
         assert "CELERY_TASK_SOFT_TIME_LIMIT" in content
         assert "CELERY_WORKER_PREFETCH_MULTIPLIER" in content
+        assert "CELERY_MEDIA_CLEANUP_TASK_TIME_LIMIT" in content
+        assert "CELERY_MEDIA_CLEANUP_TASK_SOFT_TIME_LIMIT" in content
+
+    prod_content = (project_root / "docker-compose.prod.yml").read_text(encoding="utf-8")
+    assert "ENVIRONMENT: production" in prod_content
+    assert "TRUSTED_PROXY_COUNT: ${TRUSTED_PROXY_COUNT:-1}" in prod_content
 
 
 def test_caddy_security_headers_are_configured():

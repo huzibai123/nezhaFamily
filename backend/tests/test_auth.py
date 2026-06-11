@@ -134,7 +134,38 @@ async def test_register_integrity_error_returns_400(
     )
 
     assert response.status_code == 400
-    assert "已被使用" in response.json()["detail"]
+    assert response.json()["detail"] == "该信息已被使用"
+
+
+@pytest.mark.asyncio
+async def test_register_duplicate_username_and_email_use_same_message(
+    client: AsyncClient,
+    test_admin: User,
+):
+    """用户名或邮箱冲突返回同一文案，避免精确枚举邮箱注册状态。"""
+    username_response = await client.post(
+        "/api/v1/register",
+        json={
+            "username": test_admin.username,
+            "email": "other-username-conflict@test.com",
+            "password": "password123",
+            "invite_code": test_admin.invite_code,
+        },
+    )
+    email_response = await client.post(
+        "/api/v1/register",
+        json={
+            "username": "other_email_conflict",
+            "email": test_admin.email,
+            "password": "password123",
+            "invite_code": test_admin.invite_code,
+        },
+    )
+
+    assert username_response.status_code == 400
+    assert email_response.status_code == 400
+    assert username_response.json()["detail"] == "该信息已被使用"
+    assert email_response.json()["detail"] == "该信息已被使用"
 
 
 @pytest.mark.asyncio
@@ -202,6 +233,13 @@ async def test_lookup_invite_rate_limit_uses_redis_counter(
         fake_redis.expirations["invite_lookup:203.0.113.30"]
         == auth_api.INVITE_LOOKUP_WINDOW_SECONDS
     )
+
+
+def test_invite_lookup_default_rate_limit_is_strict():
+    """公开邀请码查询默认限流保持保守，降低枚举邀请码空间的吞吐。"""
+    from app.api import auth as auth_api
+
+    assert auth_api.MAX_INVITE_LOOKUP_ATTEMPTS == 5
 
 
 def test_get_client_ip_only_trusts_x_forwarded_for_when_configured(

@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 redis_client: Any | None = None
 MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_SECONDS = 300  # 5 分钟锁定
-MAX_INVITE_LOOKUP_ATTEMPTS = 30
+MAX_INVITE_LOOKUP_ATTEMPTS = 5
 INVITE_LOOKUP_WINDOW_SECONDS = 60
 
 
@@ -245,7 +245,7 @@ async def register(
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="用户名或邮箱已被使用",
+            detail="该信息已被使用",
         )
 
     # 3. 检查邮箱是否已存在
@@ -254,7 +254,7 @@ async def register(
     if result.scalar_one_or_none():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="邮箱已被使用",
+            detail="该信息已被使用",
         )
 
     # 4. 创建新用户
@@ -274,7 +274,7 @@ async def register(
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="用户名、邮箱或邀请码已被使用",
+            detail="该信息已被使用",
         )
     await db.refresh(new_user)
 

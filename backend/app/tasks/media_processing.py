@@ -19,11 +19,12 @@ from app.core.config import settings
 from app.core.media_utils import MEDIA_ROOT, media_path_from_url
 
 try:
-    from app.tasks import IMAGE_TASK_OPTIONS, celery_app
+    from app.tasks import IMAGE_TASK_OPTIONS, MEDIA_CLEANUP_TASK_OPTIONS, celery_app
 except ImportError:
     from app.tasks import celery_app
 
     IMAGE_TASK_OPTIONS = {"max_retries": 3}
+    MEDIA_CLEANUP_TASK_OPTIONS = {"time_limit": 3600, "soft_time_limit": 3300}
 
 logger = logging.getLogger(__name__)
 
@@ -66,14 +67,16 @@ class MediaTrashUnavailable(RuntimeError):
 def get_media_trash_retention_days(retention_days: int | None = None) -> int:
     """读取媒体回收站保留天数，默认 30 天。"""
     if retention_days is not None:
-        return max(0, retention_days)
+        if retention_days < 1:
+            raise ValueError("retention_days must be at least 1")
+        return retention_days
 
     raw_value = os.getenv("MEDIA_TRASH_RETENTION_DAYS")
     if not raw_value:
         return DEFAULT_MEDIA_TRASH_RETENTION_DAYS
 
     try:
-        return max(0, int(raw_value))
+        parsed_value = int(raw_value)
     except ValueError:
         logger.warning(
             "MEDIA_TRASH_RETENTION_DAYS=%s 无效，回退到默认 %s 天",
@@ -81,6 +84,16 @@ def get_media_trash_retention_days(retention_days: int | None = None) -> int:
             DEFAULT_MEDIA_TRASH_RETENTION_DAYS,
         )
         return DEFAULT_MEDIA_TRASH_RETENTION_DAYS
+
+    if parsed_value < 1:
+        logger.warning(
+            "MEDIA_TRASH_RETENTION_DAYS=%s 小于 1，回退到默认 %s 天",
+            raw_value,
+            DEFAULT_MEDIA_TRASH_RETENTION_DAYS,
+        )
+        return DEFAULT_MEDIA_TRASH_RETENTION_DAYS
+
+    return parsed_value
 
 
 def _is_missing_deleted_at_error(exc: SQLAlchemyError) -> bool:
@@ -541,7 +554,7 @@ def generate_thumbnail(self, media_id: str) -> dict:
         return {"status": "error", "reason": "task_failed", "detail": str(e)}
 
 
-@celery_app.task
+@celery_app.task(**MEDIA_CLEANUP_TASK_OPTIONS)
 def cleanup_expired_media_trash(retention_days: int | None = None) -> dict:
     """
     手动清理媒体回收站。
