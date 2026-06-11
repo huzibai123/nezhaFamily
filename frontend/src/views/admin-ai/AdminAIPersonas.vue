@@ -76,6 +76,33 @@
             <input v-model="personaDrafts[persona.id].tone" class="ai-input" placeholder="温暖、真诚、简短" />
           </label>
 
+          <div class="grid gap-3 sm:grid-cols-3">
+            <label class="ai-field">
+              <span>评论风格</span>
+              <select v-model="personaDrafts[persona.id].comment_style" class="ai-input">
+                <option value="warm">温暖</option>
+                <option value="gentle">细腻</option>
+                <option value="playful">轻快</option>
+                <option value="brief">克制</option>
+              </select>
+            </label>
+            <label class="ai-field">
+              <span>评论长度</span>
+              <select v-model="personaDrafts[persona.id].comment_length" class="ai-input">
+                <option value="short">简短</option>
+                <option value="medium">中等</option>
+              </select>
+            </label>
+            <label class="ai-field">
+              <span>互动频率</span>
+              <select v-model="personaDrafts[persona.id].interaction_frequency" class="ai-input">
+                <option value="low">低频</option>
+                <option value="normal">常规</option>
+                <option value="high">积极</option>
+              </select>
+            </label>
+          </div>
+
           <label class="ai-field">
             <span>简介</span>
             <textarea v-model="personaDrafts[persona.id].bio" class="ai-input min-h-24 resize-y" placeholder="这个角色在家庭里的身份" />
@@ -184,6 +211,32 @@
           <Plus :size="16" stroke-width="2" aria-hidden="true" />
           {{ aiPersonaCreating ? '添加中' : '添加' }}
         </button>
+      </div>
+      <div class="mt-3 grid gap-3 sm:grid-cols-3">
+        <label class="ai-field">
+          <span>评论风格</span>
+          <select v-model="newPersonaDraft.comment_style" class="ai-input">
+            <option value="warm">温暖</option>
+            <option value="gentle">细腻</option>
+            <option value="playful">轻快</option>
+            <option value="brief">克制</option>
+          </select>
+        </label>
+        <label class="ai-field">
+          <span>评论长度</span>
+          <select v-model="newPersonaDraft.comment_length" class="ai-input">
+            <option value="short">简短</option>
+            <option value="medium">中等</option>
+          </select>
+        </label>
+        <label class="ai-field">
+          <span>互动频率</span>
+          <select v-model="newPersonaDraft.interaction_frequency" class="ai-input">
+            <option value="low">低频</option>
+            <option value="normal">常规</option>
+            <option value="high">积极</option>
+          </select>
+        </label>
       </div>
       <label class="ai-check mt-3">
         <input v-model="newPersonaDraft.auto_like_enabled" type="checkbox" />

@@ -51,6 +51,18 @@ SUPPORTED_WIRE_APIS = {"chat_completions", "responses"}
 POST_CAPTION_MAX_LENGTH = 180
 AI_COMMENT_MAX_IMAGES = 2
 AI_COMMENT_MAX_IMAGE_BYTES = 2 * 1024 * 1024
+COMMENT_LENGTH_LIMITS = {"short": 45, "medium": 80}
+COMMENT_STYLE_INSTRUCTIONS = {
+    "warm": "温暖、自然，像家人随手留下的鼓励。",
+    "gentle": "细腻、柔和，多一点照顾和珍惜的语气。",
+    "playful": "轻快、可爱，但不要使用网络梗或夸张脑补。",
+    "brief": "克制、简短，像轻轻点头的一句回应。",
+}
+COMMENT_FREQUENCY_INSTRUCTIONS = {
+    "low": "低频互动：每帖最多一次，宁可朴素也不要强行找话题。",
+    "normal": "常规互动：有明确内容时回应具体一点，没有依据时保持通用。",
+    "high": "积极互动：可以更热情，但仍必须遵守事实边界。",
+}
 
 
 @dataclass(frozen=True)
@@ -82,8 +94,28 @@ class AICommentContext:
         return any(item.media_type == "image" for item in self.media)
 
     @property
+    def has_videos(self) -> bool:
+        return any(item.media_type == "video" for item in self.media)
+
+    @property
     def has_visual_inputs(self) -> bool:
         return any(item.data_url for item in self.media)
+
+    @property
+    def has_text(self) -> bool:
+        return bool(self.text.strip())
+
+    @property
+    def content_type_label(self) -> str:
+        if self.has_text and self.has_images:
+            return "图文混合"
+        if self.has_text and self.has_videos:
+            return "视频文字混合"
+        if self.has_images:
+            return "图片"
+        if self.has_videos:
+            return "视频"
+        return "纯文字"
 
 
 def now_utc() -> datetime:
@@ -166,8 +198,7 @@ async def ensure_default_personas(db: AsyncSession) -> list[AIPersona]:
     existing = list(existing_result.scalars().all())
     if existing:
         for persona in existing:
-            if not isinstance(persona.persona_metadata, dict) or "auto_like_enabled" not in persona.persona_metadata:
-                persona.auto_like_enabled = True
+            ensure_persona_interaction_defaults(persona)
             if persona.user_id:
                 user = await db.get(User, persona.user_id)
                 if user and user.is_system:
@@ -181,6 +212,7 @@ async def ensure_default_personas(db: AsyncSession) -> list[AIPersona]:
             "tone": "温暖、稳重、像家里的记忆管家。",
             "bio": "负责守护家庭记忆、生成回顾和温柔提醒。",
             "sort_order": 10,
+            "comment_style": "warm",
         },
         {
             "name": "记忆嬷嬷",
@@ -188,6 +220,7 @@ async def ensure_default_personas(db: AsyncSession) -> list[AIPersona]:
             "tone": "亲切、细腻、会夸人，像照看一家人的长辈。",
             "bio": "喜欢给照片和日常留下暖心评论。",
             "sort_order": 20,
+            "comment_style": "gentle",
         },
         {
             "name": "小金毛",
@@ -195,17 +228,42 @@ async def ensure_default_personas(db: AsyncSession) -> list[AIPersona]:
             "tone": "活泼、真诚、短句、像陪在家里的小伙伴。",
             "bio": "负责把家庭动态夸得开心一点。",
             "sort_order": 30,
+            "comment_style": "playful",
         },
     ]
     personas = []
     for item in defaults:
+        comment_style = item.pop("comment_style")
         user = await create_system_user_for_persona(db, item["name"], item["persona_type"])
         persona = AIPersona(user_id=user.id, enabled=True, auto_comment_enabled=True, **item)
         persona.auto_like_enabled = True
+        persona.comment_style = comment_style
+        persona.comment_length = "short"
+        persona.interaction_frequency = "low"
         db.add(persona)
         personas.append(persona)
     await db.flush()
     return personas
+
+
+def ensure_persona_interaction_defaults(persona: AIPersona) -> None:
+    metadata = persona.persona_metadata if isinstance(persona.persona_metadata, dict) else {}
+    if "auto_like_enabled" not in metadata:
+        persona.auto_like_enabled = True
+    if "comment_style" not in metadata:
+        persona.comment_style = _default_comment_style_for_type(persona.persona_type)
+    if "comment_length" not in metadata:
+        persona.comment_length = "short"
+    if "interaction_frequency" not in metadata:
+        persona.interaction_frequency = "low"
+
+
+def _default_comment_style_for_type(persona_type: str) -> str:
+    if persona_type == "nanny":
+        return "gentle"
+    if persona_type in {"pet_dog", "pet_cat"}:
+        return "playful"
+    return "warm"
 
 
 async def create_system_user_for_persona(db: AsyncSession, name: str, persona_type: str) -> User:
@@ -512,20 +570,21 @@ async def generate_ai_comment_for_post(db: AsyncSession, post_id: UUID) -> Optio
         return None
     comment_text = SAFE_COMMENT
     attempts: list[dict[str, str | int | bool]] = []
+    max_comment_length = persona_comment_max_length(persona)
 
     for attempt in range(1, 4):
         try:
             result = await client.chat(
                 build_comment_prompt(persona, context, previous_comment=None if attempt == 1 else comment_text),
                 temperature=0.7,
-                max_tokens=180,
+                max_tokens=persona_comment_max_tokens(persona),
             )
         except AIProviderError as error:
             await pause_provider_for_error(db, provider, error)
             return None
 
-        candidate = normalize_comment(result.content)
-        ok, reason = validate_positive_comment(candidate, context)
+        candidate = normalize_comment(result.content, max_length=max_comment_length)
+        ok, reason = validate_positive_comment(candidate, context, max_length=max_comment_length)
         attempts.append({"attempt": attempt, "ok": ok, "reason": reason, "content": candidate})
         if ok:
             comment_text = candidate
@@ -546,6 +605,10 @@ async def generate_ai_comment_for_post(db: AsyncSession, post_id: UUID) -> Optio
             "attempts": attempts,
             "fallback": comment_text == SAFE_COMMENT,
             "used_visual_inputs": context.has_visual_inputs,
+            "content_type": context.content_type_label,
+            "comment_style": persona.comment_style,
+            "comment_length": persona.comment_length,
+            "interaction_frequency": persona.interaction_frequency,
         },
     )
     db.add(comment)
@@ -825,17 +888,17 @@ def comment_context_text(context: AICommentContext) -> str:
         f"- {item.media_type}: {item.filename} ({item.content_type})"
         for item in context.media
     ]
-    visual_note = (
-        "已附带图片视觉输入，请只评论你能从图片和文案中确认的内容。"
-        if context.has_visual_inputs
-        else (
-            "未提供可看的图片内容；不要猜测图片里有什么，只能依据文字和媒体类型做通用正向回应。"
-            if context.has_images
-            else "无图片视觉输入。"
-        )
-    )
+    if context.has_visual_inputs:
+        visual_note = "已附带图片视觉输入；只评论图片和文案中明确可确认的内容。"
+    elif context.has_images:
+        visual_note = "未提供可看的图片内容；不要猜测图片里的人、物、地点或食物。"
+    elif context.has_videos:
+        visual_note = "有视频但 v1 不读取视频画面；只能依据文字、文件名和媒体类型做通用正向回应。"
+    else:
+        visual_note = "纯文字内容；只根据帖子文字回应。"
     return "\n".join(
         [
+            f"内容类型：{context.content_type_label}",
             f"作者：{context.author_label}",
             f"帖子文字：{context.text.strip() or '无文字说明'}",
             "媒体：",
@@ -852,14 +915,18 @@ def build_comment_prompt(
     context: AICommentContext,
     previous_comment: Optional[str],
 ) -> list[dict[str, object]]:
+    max_length = persona_comment_max_length(persona)
     system_prompt = (
         f"你是家庭私有平台里的 AI 角色「{persona.name}」。"
         f"你的性格/语气：{persona.tone or '温暖、真诚、简短'}。"
+        f"评论风格：{COMMENT_STYLE_INSTRUCTIONS.get(persona.comment_style, COMMENT_STYLE_INSTRUCTIONS['warm'])}"
+        f"互动频率策略：{COMMENT_FREQUENCY_INSTRUCTIONS.get(persona.interaction_frequency, COMMENT_FREQUENCY_INSTRUCTIONS['low'])}"
         "你要为家人的新帖子写一条正向评论。必须贴合事实，宁可朴素也不要脑补。"
-        "如果帖子没有图片，只能根据帖子文字评论；如果有图片且提供视觉输入，可以结合图片中明确可见的内容评论；"
-        "如果只有视频或图片不可见，只能写通用正向回应，不描述具体画面。"
+        "按内容类型处理：纯文字只回应文字；图片只有在提供视觉输入时才描述可见内容；"
+        "视频只知道文件名和媒体类型，不描述具体画面；图文混合优先根据文字和可见图片中确定的信息回应。"
+        "禁止无依据脑补人物身份、地点、食物、疾病、关系、情绪原因或隐私事实。"
         "不要把网络梗、技术词或比喻当成真实事件，例如“烧 token/烧钱/烧卡”不能解读成烧烤、烤肉或食物。"
-        "要求：中文，30字以内，真诚、具体、积极，不要批评、诊断、吓人、泄露隐私，不要自称大模型。"
+        f"要求：中文，{max_length}字以内，真诚、具体、积极，不要批评、诊断、吓人、泄露隐私，不要自称大模型。"
     )
     user_prompt = f"帖子上下文：\n{comment_context_text(context)}\n\n请写一条评论。"
     if previous_comment:
@@ -879,18 +946,31 @@ def build_comment_prompt(
     ]
 
 
-def normalize_comment(content: str) -> str:
+def persona_comment_max_length(persona: AIPersona) -> int:
+    return COMMENT_LENGTH_LIMITS.get(persona.comment_length, COMMENT_LENGTH_LIMITS["short"])
+
+
+def persona_comment_max_tokens(persona: AIPersona) -> int:
+    return 140 if persona.comment_length == "short" else 220
+
+
+def normalize_comment(content: str, *, max_length: int = 80) -> str:
     content = content.strip().strip('"“”')
-    return " ".join(content.split())[:120]
+    cleaned = " ".join(content.split())
+    if len(cleaned) > max_length:
+        cleaned = cleaned[:max_length].rstrip("，。,. ")
+    return cleaned
 
 
 def validate_positive_comment(
     content: str,
     context: Optional[AICommentContext] = None,
+    *,
+    max_length: int = 80,
 ) -> tuple[bool, str]:
     if not content:
         return False, "empty"
-    if len(content) > 80:
+    if len(content) > max_length:
         return False, "too_long"
     if any(word in content for word in UNSAFE_WORDS):
         return False, "unsafe_word"

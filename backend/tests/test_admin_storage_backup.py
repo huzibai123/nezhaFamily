@@ -9,6 +9,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token
+from app.models.ai import AIProviderConfig
 from app.models.comment import Comment
 from app.models.media import MediaFile
 from app.models.post import Post
@@ -40,12 +41,25 @@ async def test_admin_overview_includes_storage_status(
     async def fake_redis_available() -> bool:
         return False
 
+    async def fake_celery_ping_status():
+        return True, None
+
     monkeypatch.setattr(admin_api, "MEDIA_ROOT", media_root)
     monkeypatch.setattr(admin_api, "BACKUP_ROOT", backup_root)
     monkeypatch.setattr(admin_api, "is_redis_available", fake_redis_available)
+    monkeypatch.setattr(admin_api, "get_celery_ping_status", fake_celery_ping_status)
 
     post = Post(author_id=test_admin.id, content="管理概览测试", media_urls=[])
-    db.add(post)
+    provider = AIProviderConfig(
+        name="暂停模型",
+        base_url="https://api.example.com/v1",
+        text_model="gpt-test",
+        enabled=False,
+        status="paused_billing_or_auth",
+        last_error="401 Unauthorized",
+        paused_reason="模型 API 鉴权失败、欠费或余额不足",
+    )
+    db.add_all([post, provider])
     await db.flush()
     comment = Comment(
         post_id=post.id,
@@ -73,10 +87,14 @@ async def test_admin_overview_includes_storage_status(
     assert payload["storage"]["disk_total_bytes"] > 0
     assert payload["runtime"]["database_available"] is True
     assert payload["runtime"]["redis_available"] is False
+    assert payload["runtime"]["celery_ping_available"] is True
     assert payload["runtime"]["celery_broker_configured"] is True
     assert payload["runtime"]["celery_result_backend_configured"] is True
     assert "task_time_limit_seconds" in payload["runtime"]["task_timeouts"]
     assert payload["runtime"]["media_trash_retention_days"] >= 1
+    assert payload["runtime"]["ai_provider_status"] == "paused_billing_or_auth"
+    assert "鉴权失败" in payload["runtime"]["ai_provider_paused_reason"]
+    assert payload["runtime"]["latest_backup_verification_status"] is None
     assert payload["backups"]["recent"] == []
     assert payload["recent_comments"][0]["content"] == "一条最近评论"
     assert payload["recent_media"][0]["uploader_username"] == test_admin.username
@@ -270,3 +288,68 @@ async def test_verify_and_download_admin_backup_files(
         f'{backup_id}-database.json"'
     )
     assert download_response.json()["format"] == "nezha-family-json-snapshot-v1"
+
+
+@pytest.mark.asyncio
+async def test_admin_overview_reports_latest_backup_verification(
+    client: AsyncClient,
+    test_admin: User,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """运行状态返回最近备份的校验摘要。"""
+    from app.api import admin as admin_api
+
+    media_root = tmp_path / "media"
+    backup_root = tmp_path / "backups"
+    media_root.mkdir()
+    backup_root.mkdir()
+
+    async def fake_redis_available() -> bool:
+        return True
+
+    async def fake_celery_ping_status():
+        return True, None
+
+    monkeypatch.setattr(admin_api, "MEDIA_ROOT", media_root)
+    monkeypatch.setattr(admin_api, "BACKUP_ROOT", backup_root)
+    monkeypatch.setattr(admin_api, "is_redis_available", fake_redis_available)
+    monkeypatch.setattr(admin_api, "get_celery_ping_status", fake_celery_ping_status)
+
+    create_response = await client.post(
+        "/api/v1/admin/backups",
+        headers=auth_headers(test_admin),
+    )
+    assert create_response.status_code == 200
+
+    overview_response = await client.get(
+        "/api/v1/admin/overview",
+        headers=auth_headers(test_admin),
+    )
+
+    assert overview_response.status_code == 200
+    runtime = overview_response.json()["runtime"]
+    assert runtime["latest_backup_verification_status"] == "valid"
+    assert "备份完整" in runtime["latest_backup_message"]
+
+
+@pytest.mark.asyncio
+async def test_admin_backup_verify_rejects_path_traversal(
+    client: AsyncClient,
+    test_admin: User,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """备份校验接口不能逃逸备份目录。"""
+    from app.api import admin as admin_api
+
+    backup_root = tmp_path / "backups"
+    backup_root.mkdir()
+    monkeypatch.setattr(admin_api, "BACKUP_ROOT", backup_root)
+
+    response = await client.post(
+        "/api/v1/admin/backups/..%2Fsecret/verify",
+        headers=auth_headers(test_admin),
+    )
+
+    assert response.status_code in {403, 404}

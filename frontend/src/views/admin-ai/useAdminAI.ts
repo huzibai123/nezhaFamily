@@ -93,6 +93,9 @@ export const emptyPersonaDraft = (): PersonaDraft => ({
   enabled: true,
   auto_comment_enabled: true,
   auto_like_enabled: true,
+  comment_style: 'warm',
+  comment_length: 'short',
+  interaction_frequency: 'low',
   report_enabled: true,
   album_suggestion_enabled: true,
   sort_order: 0,
@@ -515,6 +518,9 @@ export function personaToDraft(persona: AIPersona): PersonaDraft {
     enabled: persona.enabled,
     auto_comment_enabled: persona.auto_comment_enabled,
     auto_like_enabled: persona.auto_like_enabled,
+    comment_style: persona.comment_style || 'warm',
+    comment_length: persona.comment_length || 'short',
+    interaction_frequency: persona.interaction_frequency || 'low',
     report_enabled: persona.report_enabled,
     album_suggestion_enabled: persona.album_suggestion_enabled,
     sort_order: persona.sort_order || 0,
@@ -531,10 +537,36 @@ export function cleanPersonaPayload(draft: PersonaDraft): AIPersonaPayload {
     enabled: Boolean(draft.enabled),
     auto_comment_enabled: Boolean(draft.auto_comment_enabled),
     auto_like_enabled: Boolean(draft.auto_like_enabled),
+    comment_style: draft.comment_style || 'warm',
+    comment_length: draft.comment_length || 'short',
+    interaction_frequency: draft.interaction_frequency || 'low',
     report_enabled: Boolean(draft.report_enabled),
     album_suggestion_enabled: Boolean(draft.album_suggestion_enabled),
     sort_order: Number(draft.sort_order || 0),
   }
+}
+
+export function aiCommentStyleLabel(value?: string): string {
+  const labels: Record<string, string> = {
+    warm: '温暖',
+    gentle: '细腻',
+    playful: '轻快',
+    brief: '克制',
+  }
+  return labels[value || 'warm'] || '温暖'
+}
+
+export function aiCommentLengthLabel(value?: string): string {
+  return value === 'medium' ? '中等' : '简短'
+}
+
+export function aiInteractionFrequencyLabel(value?: string): string {
+  const labels: Record<string, string> = {
+    low: '低频',
+    normal: '常规',
+    high: '积极',
+  }
+  return labels[value || 'low'] || '低频'
 }
 
 export function clampNumber(value: number | undefined, min: number, max: number, fallback: number) {
@@ -612,4 +644,19 @@ export function aiJobStatusClass(status: string): string {
   if (status === 'completed') return 'ai-badge-active'
   if (status === 'failed' || status === 'skipped') return 'ai-badge-paused'
   return 'ai-badge-disabled'
+}
+
+export function jobResultSummary(result?: Record<string, unknown>): string {
+  if (!result || typeof result !== 'object') return ''
+  const message = result.message || result.summary || result.reason
+  if (typeof message === 'string' && message.trim()) return message.trim()
+
+  const parts: string[] = []
+  const created = Number(result.created ?? 0)
+  const skipped = Number(result.skipped ?? 0)
+  const processed = Number(result.processed ?? result.total ?? 0)
+  if (processed > 0) parts.push(`处理 ${processed}`)
+  if (created > 0) parts.push(`新增 ${created}`)
+  if (skipped > 0) parts.push(`跳过 ${skipped}`)
+  return parts.join(' · ')
 }

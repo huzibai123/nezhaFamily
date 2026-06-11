@@ -118,12 +118,21 @@ export interface AdminRuntimeTaskTimeouts {
 export interface AdminRuntimeStatus {
   database_available: boolean
   redis_available: boolean
+  celery_ping_available: boolean
+  celery_ping_error?: string | null
   celery_broker_url: string
   celery_result_backend: string
   celery_broker_configured: boolean
   celery_result_backend_configured: boolean
   task_timeouts: AdminRuntimeTaskTimeouts
   media_trash_retention_days: number
+  latest_backup_verification_status?: string | null
+  latest_backup_verified_at?: string | null
+  latest_backup_message?: string | null
+  ai_provider_status?: string | null
+  ai_provider_last_error?: string | null
+  ai_provider_paused_reason?: string | null
+  ai_provider_checked_at?: string | null
   checked_at: string
 }
 
@@ -259,6 +268,9 @@ export interface AIPersona {
   enabled: boolean
   auto_comment_enabled: boolean
   auto_like_enabled: boolean
+  comment_style: 'warm' | 'gentle' | 'playful' | 'brief'
+  comment_length: 'short' | 'medium'
+  interaction_frequency: 'low' | 'normal' | 'high'
   report_enabled: boolean
   album_suggestion_enabled: boolean
   sort_order: number

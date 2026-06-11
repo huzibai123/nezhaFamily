@@ -88,12 +88,21 @@ class AdminRuntimeStatus(BaseModel):
 
     database_available: bool
     redis_available: bool
+    celery_ping_available: bool
+    celery_ping_error: Optional[str] = None
     celery_broker_url: str
     celery_result_backend: str
     celery_broker_configured: bool
     celery_result_backend_configured: bool
     task_timeouts: AdminRuntimeTaskTimeouts
     media_trash_retention_days: int
+    latest_backup_verification_status: Optional[str] = None
+    latest_backup_verified_at: Optional[datetime] = None
+    latest_backup_message: Optional[str] = None
+    ai_provider_status: Optional[str] = None
+    ai_provider_last_error: Optional[str] = None
+    ai_provider_paused_reason: Optional[str] = None
+    ai_provider_checked_at: Optional[datetime] = None
     checked_at: datetime
 
 

@@ -5,6 +5,12 @@
         <p class="text-xs font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">Jobs</p>
         <h2 class="mt-2 text-lg font-semibold text-[var(--text)]">自动任务</h2>
       </div>
+      <div class="mt-5 rounded-lg border border-[var(--border)] bg-[var(--surface-panel)] p-3 text-xs leading-5 text-[var(--text-muted)]">
+        <p class="font-medium text-[var(--text-secondary)]">Provider：{{ aiStatus?.provider?.name || '默认模型' }} · {{ aiStatusLabel(aiStatus?.status) }}</p>
+        <p v-if="aiStatus?.provider?.paused_reason || aiStatus?.provider?.last_error" class="mt-1 text-[var(--accent)]">
+          {{ aiStatus?.provider?.paused_reason || aiStatus?.provider?.last_error }}
+        </p>
+      </div>
       <div class="mt-5 grid gap-3 sm:grid-cols-2">
         <button @click="runAIJob('history_learning')" :disabled="Boolean(aiJobRunning)" class="task-action" type="button">
           <BrainCircuit :size="18" stroke-width="2" aria-hidden="true" />
@@ -44,6 +50,9 @@
           <p v-if="job.error_message" class="mt-2 line-clamp-2 text-xs leading-5 text-[var(--accent)]">
             {{ job.error_message }}
           </p>
+          <p v-if="jobResultSummary(job.result)" class="mt-2 line-clamp-2 text-xs leading-5 text-[var(--text-muted)]">
+            {{ jobResultSummary(job.result) }}
+          </p>
         </div>
         <p v-if="!aiJobs.length" class="empty-state">暂无 AI 任务。</p>
       </div>
@@ -55,13 +64,16 @@
 import { BrainCircuit, Images, Sparkles } from 'lucide-vue-next'
 import {
   aiJobLabel,
+  aiStatusLabel,
   aiJobStatusClass,
   aiJobStatusLabel,
   formatDateTime,
+  jobResultSummary,
   useAdminAI,
 } from './useAdminAI'
 
 const {
+  aiStatus,
   aiJobs,
   aiJobRunning,
   aiGeneratingReport,

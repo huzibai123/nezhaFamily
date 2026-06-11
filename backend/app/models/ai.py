@@ -10,6 +10,10 @@ from sqlalchemy.orm import relationship
 
 from app.db.base import Base
 
+AI_COMMENT_STYLE_VALUES = {"warm", "gentle", "playful", "brief"}
+AI_COMMENT_LENGTH_VALUES = {"short", "medium"}
+AI_INTERACTION_FREQUENCY_VALUES = {"low", "normal", "high"}
+
 
 class AIProviderConfig(Base):
     """OpenAI-compatible 模型供应商配置。"""
@@ -84,16 +88,60 @@ class AIPersona(Base):
 
     user = relationship("User", foreign_keys=[user_id])
 
+    def _metadata_dict(self) -> dict:
+        return self.persona_metadata if isinstance(self.persona_metadata, dict) else {}
+
+    def _metadata_value(self, key: str, default: str, allowed: set[str]) -> str:
+        value = self._metadata_dict().get(key, default)
+        return value if value in allowed else default
+
+    def _set_metadata_value(self, key: str, value: str, default: str, allowed: set[str]) -> None:
+        metadata = dict(self.persona_metadata or {})
+        metadata[key] = value if value in allowed else default
+        self.persona_metadata = metadata
+
     @property
     def auto_like_enabled(self) -> bool:
-        metadata = self.persona_metadata if isinstance(self.persona_metadata, dict) else {}
-        return bool(metadata.get("auto_like_enabled", True))
+        return bool(self._metadata_dict().get("auto_like_enabled", True))
 
     @auto_like_enabled.setter
     def auto_like_enabled(self, value: bool) -> None:
         metadata = dict(self.persona_metadata or {})
         metadata["auto_like_enabled"] = bool(value)
         self.persona_metadata = metadata
+
+    @property
+    def comment_style(self) -> str:
+        return self._metadata_value("comment_style", "warm", AI_COMMENT_STYLE_VALUES)
+
+    @comment_style.setter
+    def comment_style(self, value: str) -> None:
+        self._set_metadata_value("comment_style", value, "warm", AI_COMMENT_STYLE_VALUES)
+
+    @property
+    def comment_length(self) -> str:
+        return self._metadata_value("comment_length", "short", AI_COMMENT_LENGTH_VALUES)
+
+    @comment_length.setter
+    def comment_length(self, value: str) -> None:
+        self._set_metadata_value("comment_length", value, "short", AI_COMMENT_LENGTH_VALUES)
+
+    @property
+    def interaction_frequency(self) -> str:
+        return self._metadata_value(
+            "interaction_frequency",
+            "low",
+            AI_INTERACTION_FREQUENCY_VALUES,
+        )
+
+    @interaction_frequency.setter
+    def interaction_frequency(self, value: str) -> None:
+        self._set_metadata_value(
+            "interaction_frequency",
+            value,
+            "low",
+            AI_INTERACTION_FREQUENCY_VALUES,
+        )
 
 
 class AIJob(Base):

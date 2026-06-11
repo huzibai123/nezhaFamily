@@ -20,6 +20,9 @@ AIJobStatus = Literal["pending", "running", "completed", "failed", "skipped"]
 AIProviderKeySource = Literal["database", "environment", "none"]
 AIProviderWireAPI = Literal["chat_completions", "responses"]
 AIPostCaptionMode = Literal["polish", "generate"]
+AIPersonaCommentStyle = Literal["warm", "gentle", "playful", "brief"]
+AIPersonaCommentLength = Literal["short", "medium"]
+AIPersonaInteractionFrequency = Literal["low", "normal", "high"]
 
 
 class AIProviderBase(BaseModel):
@@ -87,6 +90,9 @@ class AIPersonaBase(BaseModel):
     enabled: bool = True
     auto_comment_enabled: bool = True
     auto_like_enabled: bool = True
+    comment_style: AIPersonaCommentStyle = "warm"
+    comment_length: AIPersonaCommentLength = "short"
+    interaction_frequency: AIPersonaInteractionFrequency = "low"
     report_enabled: bool = True
     album_suggestion_enabled: bool = True
     sort_order: int = 0
@@ -105,6 +111,9 @@ class AIPersonaUpdate(BaseModel):
     enabled: Optional[bool] = None
     auto_comment_enabled: Optional[bool] = None
     auto_like_enabled: Optional[bool] = None
+    comment_style: Optional[AIPersonaCommentStyle] = None
+    comment_length: Optional[AIPersonaCommentLength] = None
+    interaction_frequency: Optional[AIPersonaInteractionFrequency] = None
     report_enabled: Optional[bool] = None
     album_suggestion_enabled: Optional[bool] = None
     sort_order: Optional[int] = None

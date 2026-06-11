@@ -287,8 +287,19 @@
           <div class="mt-4 space-y-2 rounded-lg border border-[var(--border)] bg-[var(--surface-panel)] p-3 text-xs leading-5 text-[var(--text-muted)]">
             <p class="truncate">Broker: {{ runtimeStatus.celery_broker_url || '未配置' }}</p>
             <p class="truncate">Result: {{ runtimeStatus.celery_result_backend || '未配置' }}</p>
+            <p v-if="runtimeStatus.celery_ping_error" class="text-[var(--accent)]">Worker: {{ runtimeStatus.celery_ping_error }}</p>
             <p>AI 任务超时 {{ runtimeStatus.task_timeouts.ai_task_time_limit_seconds }}s / 清理任务 {{ runtimeStatus.task_timeouts.media_cleanup_task_time_limit_seconds }}s</p>
             <p>媒体回收站保留 {{ runtimeStatus.media_trash_retention_days }} 天</p>
+            <p>
+              最近备份校验：{{ runtimeStatus.latest_backup_verification_status ? runtimeStatus.latest_backup_verification_status : '暂无' }}
+              <span v-if="runtimeStatus.latest_backup_message"> · {{ runtimeStatus.latest_backup_message }}</span>
+            </p>
+            <p>
+              AI Provider：{{ runtimeStatus.ai_provider_status || '未初始化' }}
+              <span v-if="runtimeStatus.ai_provider_paused_reason || runtimeStatus.ai_provider_last_error" class="text-[var(--accent)]">
+                · {{ runtimeStatus.ai_provider_paused_reason || runtimeStatus.ai_provider_last_error }}
+              </span>
+            </p>
           </div>
         </article>
 
@@ -814,6 +825,8 @@ const storageStatus = computed<AdminStorageStatus>(() => overview.value?.storage
 const runtimeStatus = computed<AdminRuntimeStatus>(() => overview.value?.runtime ?? {
   database_available: false,
   redis_available: false,
+  celery_ping_available: false,
+  celery_ping_error: null,
   celery_broker_url: '',
   celery_result_backend: '',
   celery_broker_configured: false,
@@ -829,11 +842,19 @@ const runtimeStatus = computed<AdminRuntimeStatus>(() => overview.value?.runtime
     media_cleanup_task_soft_time_limit_seconds: 0,
   },
   media_trash_retention_days: 0,
+  latest_backup_verification_status: null,
+  latest_backup_verified_at: null,
+  latest_backup_message: null,
+  ai_provider_status: null,
+  ai_provider_last_error: null,
+  ai_provider_paused_reason: null,
+  ai_provider_checked_at: null,
   checked_at: '',
 })
 const runtimeHealthCards = computed(() => [
   { label: '数据库连接', ok: runtimeStatus.value.database_available },
   { label: 'Redis 连接', ok: runtimeStatus.value.redis_available },
+  { label: 'Worker Ping', ok: runtimeStatus.value.celery_ping_available },
   { label: 'Celery Broker', ok: runtimeStatus.value.celery_broker_configured },
   { label: '结果后端', ok: runtimeStatus.value.celery_result_backend_configured },
 ])

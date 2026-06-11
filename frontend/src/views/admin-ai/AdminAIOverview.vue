@@ -57,6 +57,9 @@
           <span class="text-[var(--text-muted)]">Key 来源</span>
           <span class="min-w-0 truncate font-medium text-[var(--text)]">{{ aiKeySourceLabel(aiStatus?.provider?.api_key_source) }}</span>
         </div>
+        <p v-if="aiStatus?.provider?.paused_reason || aiStatus?.provider?.last_error" class="rounded-lg border border-[var(--border)] bg-[var(--surface-panel)] p-3 text-xs leading-5 text-[var(--accent)]">
+          {{ aiStatus?.provider?.paused_reason || aiStatus?.provider?.last_error }}
+        </p>
       </div>
     </section>
 
@@ -75,6 +78,9 @@
           </div>
           <p class="mt-2 text-xs text-[var(--text-muted)]">
             {{ job.progress_current }} / {{ job.progress_total }} · {{ formatDateTime(job.created_at) }}
+          </p>
+          <p v-if="job.error_message || jobResultSummary(job.result)" class="mt-2 line-clamp-2 text-xs leading-5 text-[var(--text-muted)]">
+            {{ job.error_message || jobResultSummary(job.result) }}
           </p>
         </div>
         <p v-if="!aiJobs.length" class="empty-state">暂无 AI 任务。</p>
@@ -109,6 +115,7 @@ import {
   aiStatusClass,
   aiStatusLabel,
   formatDateTime,
+  jobResultSummary,
   useAdminAI,
 } from './useAdminAI'
 

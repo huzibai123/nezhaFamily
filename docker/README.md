@@ -181,6 +181,10 @@ docker exec -it nezha-backend alembic revision --autogenerate -m "描述"
 
 ### 备份和恢复
 
+管理后台的“备份状态”可以创建 JSON 数据库快照、媒体归档和 manifest；创建后请先点击
+“校验备份”，确认 manifest、数据库快照和媒体归档均可读取，再下载到宿主机或异地存储。
+恢复演练建议先在临时目录或新 compose project 中完成，不要直接覆盖正在使用的生产卷。
+
 ```bash
 # 备份数据库
 docker exec nezha-postgres pg_dump -U nezha_user nezha_family > backup.sql
@@ -281,6 +285,7 @@ docker compose -f /tmp/nezha-compose-prod-smoke.yml up -d
 curl -fsS http://localhost:18080/
 docker exec nezha-backend curl -fsS http://localhost:8000/health
 docker exec nezha-celery-worker celery -A app.tasks.celery_app inspect ping --timeout=10
+# 登录管理后台后检查“运行状态”和“备份状态”，并对最近备份执行一次校验。
 
 docker compose -f /tmp/nezha-compose-prod-smoke.yml down
 ```

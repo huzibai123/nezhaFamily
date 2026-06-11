@@ -261,6 +261,57 @@ async def test_ai_persona_auto_like_enabled_round_trips_in_metadata(
     assert persona.persona_metadata["auto_like_enabled"] is True
 
 
+async def test_ai_persona_comment_controls_round_trip_in_metadata(
+    client: AsyncClient,
+    db: AsyncSession,
+    test_admin: User,
+):
+    """评论风格、长度和频率复用 persona metadata，不需要迁移。"""
+    create_response = await client.post(
+        "/api/v1/admin/ai/personas",
+        json={
+            "name": "评论小助手",
+            "persona_type": "helper",
+            "comment_style": "playful",
+            "comment_length": "medium",
+            "interaction_frequency": "high",
+        },
+        headers=auth_headers(test_admin),
+    )
+
+    assert create_response.status_code == 201
+    created = create_response.json()
+    assert created["comment_style"] == "playful"
+    assert created["comment_length"] == "medium"
+    assert created["interaction_frequency"] == "high"
+
+    persona = await db.get(AIPersona, UUID(created["id"]))
+    assert persona is not None
+    assert persona.persona_metadata["comment_style"] == "playful"
+    assert persona.persona_metadata["comment_length"] == "medium"
+    assert persona.persona_metadata["interaction_frequency"] == "high"
+
+    update_response = await client.patch(
+        f"/api/v1/admin/ai/personas/{created['id']}",
+        json={
+            "comment_style": "gentle",
+            "comment_length": "short",
+            "interaction_frequency": "low",
+        },
+        headers=auth_headers(test_admin),
+    )
+
+    assert update_response.status_code == 200
+    updated = update_response.json()
+    assert updated["comment_style"] == "gentle"
+    assert updated["comment_length"] == "short"
+    assert updated["interaction_frequency"] == "low"
+    await db.refresh(persona)
+    assert persona.persona_metadata["comment_style"] == "gentle"
+    assert persona.persona_metadata["comment_length"] == "short"
+    assert persona.persona_metadata["interaction_frequency"] == "low"
+
+
 async def test_ai_persona_avatar_stores_raw_and_returns_signed_url(
     client: AsyncClient,
     db: AsyncSession,
@@ -1172,6 +1223,76 @@ async def test_generate_ai_comment_does_not_send_image_to_text_model(
     prompt_text = flattened_message_text(fake_client.calls[0]["messages"])
     assert "未提供可看的图片内容" in prompt_text
     assert comment.ai_generation_metadata["used_visual_inputs"] is False
+
+
+async def test_generate_ai_comment_video_prompt_uses_metadata_only(
+    db: AsyncSession,
+    test_user: User,
+    monkeypatch,
+):
+    """视频 v1 只给模型文件元信息，不能让模型脑补具体画面。"""
+    provider = active_provider()
+    provider.vision_model = "vision-test"
+    post = Post(
+        author_id=test_user.id,
+        content="今天记录了一小段家庭日常",
+        media_urls=[{"type": "video", "url": "/media/family-day.mp4"}],
+    )
+    db.add_all([provider, post])
+    await db.commit()
+    await db.refresh(post)
+    await ai_housekeeper.ensure_default_personas(db)
+    await db.commit()
+
+    class FakeClient:
+        calls: list[dict[str, object]] = []
+
+        async def chat(self, messages, **kwargs):
+            self.calls.append({"messages": messages, "kwargs": kwargs})
+            return AIChatResult(content="这段家庭日常真温暖呀！", raw={})
+
+    fake_client = FakeClient()
+    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider, **kwargs: fake_client)
+
+    comment = await ai_housekeeper.generate_ai_comment_for_post(db, post.id)
+    await db.commit()
+
+    assert comment is not None
+    prompt_text = flattened_message_text(fake_client.calls[0]["messages"])
+    assert "内容类型：视频文字混合" in prompt_text
+    assert "不读取视频画面" in prompt_text
+    assert "不描述具体画面" in prompt_text
+    parts = content_parts(fake_client.calls[0]["messages"])
+    assert not any(part.get("type") in {"image_url", "input_image"} for part in parts)
+    assert comment.ai_generation_metadata["content_type"] == "视频文字混合"
+
+
+async def test_build_comment_prompt_includes_persona_controls():
+    persona = AIPersona(
+        name="小金毛",
+        persona_type="pet_dog",
+        tone="活泼、真诚、短句",
+        enabled=True,
+        auto_comment_enabled=True,
+    )
+    persona.comment_style = "playful"
+    persona.comment_length = "medium"
+    persona.interaction_frequency = "high"
+    context = ai_housekeeper.AICommentContext(
+        author_label="妈妈",
+        text="今天一起做手工",
+        media=[],
+        profile_text="",
+    )
+
+    prompt_text = flattened_message_text(
+        ai_housekeeper.build_comment_prompt(persona, context, previous_comment=None)
+    )
+
+    assert "轻快、可爱" in prompt_text
+    assert "积极互动" in prompt_text
+    assert "80字以内" in prompt_text
+    assert "内容类型：纯文字" in prompt_text
 
 
 async def test_generate_ai_comment_task_creates_comment_across_event_loops(

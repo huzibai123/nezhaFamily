@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Literal, Optional
 from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
+import asyncio
 import json
 import secrets
 import shutil
@@ -23,6 +24,7 @@ from app.core.dependencies import get_current_active_admin
 from app.core.security import get_current_user
 from app.db.session import get_db
 from app.models.album import Album
+from app.models.ai import AIProviderConfig
 from app.models.comment import Comment
 from app.models.event import Event
 from app.models.family_settings import FamilySettings
@@ -403,6 +405,37 @@ async def is_redis_available() -> bool:
                 await result
 
 
+async def get_celery_ping_status() -> tuple[bool, Optional[str]]:
+    """短超时探测 Celery worker，失败只作为诊断字段返回。"""
+    from app.tasks import celery_app
+
+    def _ping() -> dict | None:
+        inspector = celery_app.control.inspect(timeout=1)
+        return inspector.ping() if inspector else None
+
+    try:
+        response = await asyncio.to_thread(_ping)
+    except Exception as exc:
+        return False, str(exc)[:300]
+    if response:
+        return True, None
+    return False, "未收到 Celery worker ping 响应"
+
+
+def summarize_latest_backup_verification() -> tuple[Optional[str], Optional[datetime], Optional[str]]:
+    """返回最近备份校验摘要；无备份或校验异常均不影响管理概览。"""
+    latest = get_backup_status().latest
+    if not latest:
+        return None, None, None
+    try:
+        verification = verify_backup_snapshot(latest.backup_id)
+    except HTTPException as exc:
+        return "invalid", datetime.now(timezone.utc), str(exc.detail)
+    except Exception as exc:
+        return "invalid", datetime.now(timezone.utc), str(exc)[:300]
+    return verification.status, verification.verified_at, verification.message
+
+
 async def get_runtime_status(db: AsyncSession) -> AdminRuntimeStatus:
     """汇总只读运行时状态，供管理员排查部署和任务环境。"""
     from app.tasks import (
@@ -419,10 +452,18 @@ async def get_runtime_status(db: AsyncSession) -> AdminRuntimeStatus:
 
     broker_url = settings.CELERY_BROKER_URL
     result_backend = settings.CELERY_RESULT_BACKEND
+    celery_ping_available, celery_ping_error = await get_celery_ping_status()
+    backup_status, backup_verified_at, backup_message = summarize_latest_backup_verification()
+    provider_result = await db.execute(
+        select(AIProviderConfig).order_by(desc(AIProviderConfig.created_at)).limit(1)
+    )
+    provider = provider_result.scalar_one_or_none()
 
     return AdminRuntimeStatus(
         database_available=await is_database_available(db),
         redis_available=await is_redis_available(),
+        celery_ping_available=celery_ping_available,
+        celery_ping_error=celery_ping_error,
         celery_broker_url=mask_url_credentials(broker_url),
         celery_result_backend=mask_url_credentials(result_backend),
         celery_broker_configured=bool(broker_url),
@@ -440,6 +481,13 @@ async def get_runtime_status(db: AsyncSession) -> AdminRuntimeStatus:
             ),
         ),
         media_trash_retention_days=get_media_trash_retention_days(),
+        latest_backup_verification_status=backup_status,
+        latest_backup_verified_at=backup_verified_at,
+        latest_backup_message=backup_message,
+        ai_provider_status=provider.status if provider else None,
+        ai_provider_last_error=provider.last_error if provider else None,
+        ai_provider_paused_reason=provider.paused_reason if provider else None,
+        ai_provider_checked_at=provider.last_checked_at if provider else None,
         checked_at=datetime.now(timezone.utc),
     )
 

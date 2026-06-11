@@ -118,6 +118,9 @@ def persona_response(persona: AIPersona) -> AIPersonaResponse:
         enabled=persona.enabled,
         auto_comment_enabled=persona.auto_comment_enabled,
         auto_like_enabled=persona.auto_like_enabled,
+        comment_style=persona.comment_style,
+        comment_length=persona.comment_length,
+        interaction_frequency=persona.interaction_frequency,
         report_enabled=persona.report_enabled,
         album_suggestion_enabled=persona.album_suggestion_enabled,
         sort_order=persona.sort_order,
@@ -321,11 +324,21 @@ async def create_ai_persona(
     db: AsyncSession = Depends(get_db),
 ):
     user = await create_system_user_for_persona(db, payload.name, payload.persona_type)
-    persona_data = payload.model_dump(exclude={"auto_like_enabled"})
+    persona_data = payload.model_dump(
+        exclude={
+            "auto_like_enabled",
+            "comment_style",
+            "comment_length",
+            "interaction_frequency",
+        }
+    )
     if "avatar_url" in persona_data:
         persona_data["avatar_url"] = raw_media_url(persona_data["avatar_url"])
     persona = AIPersona(user_id=user.id, **persona_data)
     persona.auto_like_enabled = payload.auto_like_enabled
+    persona.comment_style = payload.comment_style
+    persona.comment_length = payload.comment_length
+    persona.interaction_frequency = payload.interaction_frequency
     db.add(persona)
     await db.commit()
     await db.refresh(persona)
@@ -344,9 +357,22 @@ async def update_ai_persona(
         raise HTTPException(status_code=404, detail="AI 角色不存在")
 
     update_data = payload.model_dump(exclude_unset=True)
+    metadata_fields = {
+        "auto_like_enabled",
+        "comment_style",
+        "comment_length",
+        "interaction_frequency",
+    }
+    metadata_values = {
+        field: update_data.pop(field)
+        for field in list(update_data.keys())
+        if field in metadata_fields
+    }
     if "avatar_url" in update_data:
         update_data["avatar_url"] = raw_media_url(update_data["avatar_url"])
     for field, value in update_data.items():
+        setattr(persona, field, value)
+    for field, value in metadata_values.items():
         setattr(persona, field, value)
     if persona.user_id:
         user = await db.get(User, persona.user_id)
