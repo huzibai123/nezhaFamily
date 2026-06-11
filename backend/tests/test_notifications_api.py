@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token
+from app.models.ai import AIPersona
 from app.models.comment import Comment
 from app.models.notification import Notification
 from app.models.post import Post
@@ -218,3 +219,55 @@ async def test_reply_notification_skips_actor_self(
     )
 
     assert result.scalars().all() == []
+
+
+@pytest.mark.asyncio
+async def test_ai_notification_response_uses_persona_display_name(
+    client: AsyncClient,
+    db: AsyncSession,
+    test_user: User,
+):
+    """AI 系统用户通知展示 persona 名称，而不是内部账号名。"""
+    ai_user = User(
+        username="ai_61855",
+        email="ai_61855@ai.nezha.local",
+        password_hash="!",
+        role="member",
+        is_system=True,
+        system_type="ai_persona",
+        role_in_family="内部角色",
+    )
+    db.add(ai_user)
+    await db.flush()
+    persona = AIPersona(
+        user_id=ai_user.id,
+        name="小金毛",
+        persona_type="pet_dog",
+        avatar_url="/media/ai-dog.png",
+        enabled=True,
+    )
+    post = Post(author_id=test_user.id, content="一条有 AI 点赞的动态", media_urls=[])
+    db.add_all([persona, post])
+    await db.flush()
+    notification = Notification(
+        recipient_id=test_user.id,
+        actor_id=ai_user.id,
+        type="like_post",
+        target_type="post",
+        target_id=post.id,
+        post_id=post.id,
+        message="小金毛 点赞了你的帖子",
+    )
+    db.add(notification)
+    await db.commit()
+
+    response = await client.get(
+        "/api/v1/notifications",
+        headers=auth_headers(test_user),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["notifications"][0]
+    assert payload["actor_username"] == "小金毛"
+    assert payload["actor_avatar_url"] == "/media/ai-dog.png"
+    assert payload["actor_username"] != "ai_61855"

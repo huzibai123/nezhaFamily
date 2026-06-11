@@ -67,6 +67,7 @@ from app.services.ai_housekeeper import (
     provider_settings,
     provider_wire_api,
     search_ai_memory,
+    sync_persona_system_user,
     test_provider_connection,
 )
 from app.services.ai_client import AIProviderError
@@ -344,9 +345,7 @@ async def update_ai_persona(
     if persona.user_id:
         user = await db.get(User, persona.user_id)
         if user:
-            user.bio = persona.bio
-            user.avatar_url = persona.avatar_url
-            user.role_in_family = persona.persona_type
+            sync_persona_system_user(user, persona)
     await db.commit()
     await db.refresh(persona)
     return persona_response(persona)

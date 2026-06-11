@@ -168,6 +168,10 @@ async def ensure_default_personas(db: AsyncSession) -> list[AIPersona]:
         for persona in existing:
             if not isinstance(persona.persona_metadata, dict) or "auto_like_enabled" not in persona.persona_metadata:
                 persona.auto_like_enabled = True
+            if persona.user_id:
+                user = await db.get(User, persona.user_id)
+                if user and user.is_system:
+                    sync_persona_system_user(user, persona)
         return existing
 
     defaults = [
@@ -227,11 +231,18 @@ async def create_system_user_for_persona(db: AsyncSession, name: str, persona_ty
         system_type="ai_persona",
         avatar_url=None,
         bio=f"AI 家庭角色：{name}",
-        role_in_family=persona_type,
+        role_in_family=name,
     )
     db.add(user)
     await db.flush()
     return user
+
+
+def sync_persona_system_user(user: User, persona: AIPersona) -> None:
+    """Keep the hidden AI system user presentable in notifications and fallbacks."""
+    user.role_in_family = persona.name
+    user.avatar_url = persona.avatar_url
+    user.bio = persona.bio or f"AI 家庭角色：{persona.name}"
 
 
 async def _find_user_by_username_or_email(db: AsyncSession, username: str, email: str) -> Optional[User]:
@@ -569,6 +580,7 @@ async def create_ai_like_for_post(db: AsyncSession, post: Post) -> Optional[Like
     actor = await db.get(User, persona.user_id)
     if not actor or not actor.is_system:
         return None
+    sync_persona_system_user(actor, persona)
 
     like = Like(user_id=actor.id, target_type="post", target_id=post.id)
     db.add(like)

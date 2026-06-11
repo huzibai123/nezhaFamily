@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_current_user
 from app.db.session import get_db
+from app.models.ai import AIPersona
 from app.models.notification import Notification
 from app.models.user import User
 from app.schemas.notification import NotificationListResponse, NotificationResponse
@@ -19,6 +20,43 @@ router = APIRouter()
 
 def _actor_name(actor: User) -> str:
     return actor.role_in_family or actor.username
+
+
+async def _ai_personas_for_actors(db: AsyncSession, actor_ids: Iterable[UUID]) -> dict[UUID, AIPersona]:
+    ids = list(set(actor_ids))
+    if not ids:
+        return {}
+    result = await db.execute(select(AIPersona).where(AIPersona.user_id.in_(ids)))
+    return {persona.user_id: persona for persona in result.scalars().all() if persona.user_id}
+
+
+def _notification_actor_display(actor: User, persona: AIPersona | None = None) -> tuple[str, str | None]:
+    if actor.is_system and actor.system_type == "ai_persona" and persona:
+        return persona.name, persona.avatar_url
+    return _actor_name(actor), actor.avatar_url
+
+
+def _notification_response(
+    notification: Notification,
+    actor: User,
+    *,
+    persona: AIPersona | None = None,
+) -> NotificationResponse:
+    actor_username, actor_avatar_url = _notification_actor_display(actor, persona)
+    return NotificationResponse(
+        id=notification.id,
+        recipient_id=notification.recipient_id,
+        actor_id=notification.actor_id,
+        actor_username=actor_username,
+        actor_avatar_url=actor_avatar_url,
+        type=notification.type,
+        target_type=notification.target_type,
+        target_id=notification.target_id,
+        post_id=notification.post_id,
+        message=notification.message,
+        is_read=notification.is_read,
+        created_at=notification.created_at,
+    )
 
 
 async def create_notification(
@@ -141,22 +179,10 @@ async def get_notifications(
     )
     result = await db.execute(query)
     rows = result.all()
+    personas = await _ai_personas_for_actors(db, [actor.id for _notification, actor in rows])
 
     notifications = [
-        NotificationResponse(
-            id=notification.id,
-            recipient_id=notification.recipient_id,
-            actor_id=notification.actor_id,
-            actor_username=actor.username,
-            actor_avatar_url=actor.avatar_url,
-            type=notification.type,
-            target_type=notification.target_type,
-            target_id=notification.target_id,
-            post_id=notification.post_id,
-            message=notification.message,
-            is_read=notification.is_read,
-            created_at=notification.created_at,
-        )
+        _notification_response(notification, actor, persona=personas.get(actor.id))
         for notification, actor in rows
     ]
 
@@ -215,20 +241,8 @@ async def mark_notification_read(
     await db.commit()
     await db.refresh(notification)
 
-    return NotificationResponse(
-        id=notification.id,
-        recipient_id=notification.recipient_id,
-        actor_id=notification.actor_id,
-        actor_username=actor.username,
-        actor_avatar_url=actor.avatar_url,
-        type=notification.type,
-        target_type=notification.target_type,
-        target_id=notification.target_id,
-        post_id=notification.post_id,
-        message=notification.message,
-        is_read=notification.is_read,
-        created_at=notification.created_at,
-    )
+    personas = await _ai_personas_for_actors(db, [actor.id])
+    return _notification_response(notification, actor, persona=personas.get(actor.id))
 
 
 def build_comment_message(actor: User) -> str:

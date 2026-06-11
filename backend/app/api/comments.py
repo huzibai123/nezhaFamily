@@ -9,6 +9,7 @@ from sqlalchemy import delete as sql_delete, select, func, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
+from app.models.ai import AIPersona
 from app.models.user import User
 from app.models.post import Post
 from app.models.comment import Comment
@@ -22,6 +23,45 @@ from app.api.notifications import (
 )
 
 router = APIRouter()
+
+
+def comment_display_author(comment: Comment, author: User, persona: AIPersona | None = None) -> tuple[str, str | None]:
+    """Return the public-facing author label for a comment."""
+    if comment.is_ai_generated and persona:
+        return persona.name, persona.avatar_url
+    if author.is_system:
+        return author.role_in_family or author.username, author.avatar_url
+    return author.username, author.avatar_url
+
+
+def comment_response(
+    comment: Comment,
+    author: User,
+    *,
+    persona: AIPersona | None = None,
+    like_count: int = 0,
+    is_liked: bool = False,
+    replies: list[CommentResponse] | None = None,
+) -> CommentResponse:
+    author_name, author_avatar_url = comment_display_author(comment, author, persona)
+    return CommentResponse(
+        id=comment.id,
+        post_id=comment.post_id,
+        author_id=comment.author_id,
+        author_username=author_name,
+        author_avatar_url=author_avatar_url,
+        content=comment.content,
+        parent_id=comment.parent_id,
+        like_count=like_count,
+        is_liked=is_liked,
+        created_at=comment.created_at,
+        updated_at=comment.updated_at,
+        is_ai_generated=comment.is_ai_generated,
+        ai_persona_id=comment.ai_persona_id,
+        edited_by=comment.edited_by,
+        edited_at=comment.edited_at,
+        replies=replies,
+    )
 
 
 @router.post(
@@ -113,25 +153,7 @@ async def create_comment(
     await db.commit()
     await db.refresh(comment)
 
-    # 构造响应
-    return CommentResponse(
-        id=comment.id,
-        post_id=comment.post_id,
-        author_id=comment.author_id,
-        author_username=current_user.username,
-        author_avatar_url=current_user.avatar_url,
-        content=comment.content,
-        parent_id=comment.parent_id,
-        like_count=0,
-        is_liked=False,
-        created_at=comment.created_at,
-        updated_at=comment.updated_at,
-        is_ai_generated=comment.is_ai_generated,
-        ai_persona_id=comment.ai_persona_id,
-        edited_by=comment.edited_by,
-        edited_at=comment.edited_at,
-        replies=None,
-    )
+    return comment_response(comment, current_user, replies=None)
 
 
 @router.get("/posts/{post_id}/comments", response_model=CommentListResponse)
@@ -191,6 +213,12 @@ async def get_comments(
     # 构建评论树（两层结构：顶级评论 + 回复）
     comments_dict = {}
     top_level_comments = []
+    persona_ids = {c.ai_persona_id for c in all_comments if c.ai_persona_id}
+    if persona_ids:
+        personas_result = await db.execute(select(AIPersona).where(AIPersona.id.in_(persona_ids)))
+        personas = {persona.id: persona for persona in personas_result.scalars().all()}
+    else:
+        personas = {}
 
     # 第一遍：构建所有评论对象
     for comment in all_comments:
@@ -198,22 +226,12 @@ async def get_comments(
         if not author:
             continue
 
-        comment_resp = CommentResponse(
-            id=comment.id,
-            post_id=comment.post_id,
-            author_id=comment.author_id,
-            author_username=author.username,
-            author_avatar_url=author.avatar_url,
-            content=comment.content,
-            parent_id=comment.parent_id,
+        comment_resp = comment_response(
+            comment,
+            author,
+            persona=personas.get(comment.ai_persona_id),
             like_count=likes_count.get(comment.id, 0),
             is_liked=comment.id in user_likes,
-            created_at=comment.created_at,
-            updated_at=comment.updated_at,
-            is_ai_generated=comment.is_ai_generated,
-            ai_persona_id=comment.ai_persona_id,
-            edited_by=comment.edited_by,
-            edited_at=comment.edited_at,
             replies=[],
         )
 
@@ -279,22 +297,13 @@ async def update_comment(
             Like.target_id == comment.id,
         )
     )
-    return CommentResponse(
-        id=comment.id,
-        post_id=comment.post_id,
-        author_id=comment.author_id,
-        author_username=author.username,
-        author_avatar_url=author.avatar_url,
-        content=comment.content,
-        parent_id=comment.parent_id,
+    persona = await db.get(AIPersona, comment.ai_persona_id) if comment.ai_persona_id else None
+    return comment_response(
+        comment,
+        author,
+        persona=persona,
         like_count=likes_count_result.scalar() or 0,
         is_liked=user_like_result.scalar_one_or_none() is not None,
-        created_at=comment.created_at,
-        updated_at=comment.updated_at,
-        is_ai_generated=comment.is_ai_generated,
-        ai_persona_id=comment.ai_persona_id,
-        edited_by=comment.edited_by,
-        edited_at=comment.edited_at,
         replies=[],
     )
 

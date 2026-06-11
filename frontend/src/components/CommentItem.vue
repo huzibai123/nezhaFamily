@@ -17,7 +17,13 @@
           class="avatar"
           :style="{ background: avatarGradient }"
         >
-          <span class="avatar-initial">{{ avatarInitial }}</span>
+          <img
+            v-if="comment.author_avatar_url"
+            :src="mediaUrl(comment.author_avatar_url)"
+            class="avatar-image"
+            alt=""
+          />
+          <span v-else class="avatar-initial">{{ avatarInitial }}</span>
         </div>
 
         <div class="comment-content">
@@ -80,6 +86,7 @@
 import { computed } from 'vue'
 import { Heart, CornerDownRight, Trash2 } from 'lucide-vue-next'
 import type { Comment } from '@/api/posts'
+import { mediaUrl } from '@/utils/media'
 
 const props = withDefaults(defineProps<{
   comment: Comment
@@ -219,6 +226,13 @@ function formatTime(timestamp: string): string {
   justify-content: center;
   flex-shrink: 0;
   box-shadow: 0 2px 8px rgba(143, 80, 40, 0.16);
+  overflow: hidden;
+}
+
+.avatar-image {
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
 }
 
 .avatar-initial {

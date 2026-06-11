@@ -1522,6 +1522,54 @@ async def test_admin_can_edit_ai_comment_but_member_cannot(
     assert admin_response.json()["edited_by"] == str(test_admin.id)
 
 
+async def test_ai_comment_response_uses_persona_display_name(
+    client: AsyncClient,
+    db: AsyncSession,
+    test_user: User,
+):
+    persona_user = User(
+        username="ai_61855",
+        email="ai_61855@ai.nezha.local",
+        password_hash="!",
+        role="member",
+        is_system=True,
+        system_type="ai_persona",
+        role_in_family="内部角色",
+    )
+    db.add(persona_user)
+    await db.flush()
+    persona = AIPersona(
+        user_id=persona_user.id,
+        name="记忆嬷嬷",
+        persona_type="nanny",
+        avatar_url="/media/ai-nanny.png",
+        enabled=True,
+    )
+    post = Post(author_id=test_user.id, content="宝宝追蝴蝶", media_urls=[])
+    db.add_all([persona, post])
+    await db.flush()
+    comment = Comment(
+        post_id=post.id,
+        author_id=persona_user.id,
+        content="这画面太可爱啦！",
+        is_ai_generated=True,
+        ai_persona_id=persona.id,
+    )
+    db.add(comment)
+    await db.commit()
+
+    response = await client.get(
+        f"/api/v1/posts/{post.id}/comments",
+        headers=auth_headers(test_user),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()["comments"][0]
+    assert payload["author_username"] == "记忆嬷嬷"
+    assert payload["author_avatar_url"] == "/media/ai-nanny.png"
+    assert payload["author_username"] != "ai_61855"
+
+
 async def test_history_learning_job_requires_enabled_ai(
     client: AsyncClient,
     db: AsyncSession,
