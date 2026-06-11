@@ -21,6 +21,10 @@
           <strong>{{ autoCommentPersonaCount }}</strong>
         </div>
         <div class="metric-tile">
+          <span>自动点赞</span>
+          <strong>{{ autoLikePersonaCount }}</strong>
+        </div>
+        <div class="metric-tile">
           <span>待审建议</span>
           <strong>{{ aiPendingSuggestions.length }}</strong>
         </div>
@@ -116,5 +120,6 @@ const {
   aiPendingSuggestions,
   enabledPersonaCount,
   autoCommentPersonaCount,
+  autoLikePersonaCount,
 } = useAdminAI()
 </script>

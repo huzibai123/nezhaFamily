@@ -86,6 +86,7 @@ class AIPersonaBase(BaseModel):
     bio: Optional[str] = None
     enabled: bool = True
     auto_comment_enabled: bool = True
+    auto_like_enabled: bool = True
     report_enabled: bool = True
     album_suggestion_enabled: bool = True
     sort_order: int = 0
@@ -103,6 +104,7 @@ class AIPersonaUpdate(BaseModel):
     bio: Optional[str] = None
     enabled: Optional[bool] = None
     auto_comment_enabled: Optional[bool] = None
+    auto_like_enabled: Optional[bool] = None
     report_enabled: Optional[bool] = None
     album_suggestion_enabled: Optional[bool] = None
     sort_order: Optional[int] = None

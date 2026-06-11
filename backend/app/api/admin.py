@@ -5,6 +5,7 @@
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Literal, Optional
+from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
 import json
 import secrets
@@ -13,7 +14,8 @@ import tarfile
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
-from sqlalchemy import desc, func, select
+from redis.asyncio import Redis
+from sqlalchemy import desc, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -48,6 +50,8 @@ from app.schemas.admin import (
     AdminPostingMemberSummary,
     AdminRecentCommentSummary,
     AdminRecentMediaSummary,
+    AdminRuntimeStatus,
+    AdminRuntimeTaskTimeouts,
     AdminStorageStatus,
     AdminUserResponse,
     AdminUserUpdate,
@@ -356,6 +360,90 @@ async def get_storage_status(db: AsyncSession) -> AdminStorageStatus:
     )
 
 
+def mask_url_credentials(url: str) -> str:
+    """隐藏连接串中的密码，保留管理员排查所需的主机/DB 信息。"""
+    parts = urlsplit(url)
+    if "@" not in parts.netloc:
+        return url
+
+    userinfo, hostinfo = parts.netloc.rsplit("@", 1)
+    username = userinfo.split(":", 1)[0]
+    masked_userinfo = f"{username}:***" if username else "***"
+    return urlunsplit(parts._replace(netloc=f"{masked_userinfo}@{hostinfo}"))
+
+
+async def is_database_available(db: AsyncSession) -> bool:
+    """用当前会话做轻量数据库探活。"""
+    try:
+        await db.execute(text("SELECT 1"))
+    except Exception:
+        return False
+    return True
+
+
+async def is_redis_available() -> bool:
+    """用短超时 Redis ping 做运行时探活。"""
+    redis_client = Redis.from_url(
+        settings.REDIS_URL,
+        decode_responses=True,
+        socket_connect_timeout=1,
+        socket_timeout=1,
+    )
+    try:
+        return bool(await redis_client.ping())
+    except Exception:
+        return False
+    finally:
+        close = getattr(redis_client, "aclose", None) or getattr(
+            redis_client, "close", None
+        )
+        if close is not None:
+            result = close()
+            if hasattr(result, "__await__"):
+                await result
+
+
+async def get_runtime_status(db: AsyncSession) -> AdminRuntimeStatus:
+    """汇总只读运行时状态，供管理员排查部署和任务环境。"""
+    from app.tasks import (
+        AI_TASK_SOFT_TIME_LIMIT_SECONDS,
+        AI_TASK_TIME_LIMIT_SECONDS,
+        CELERY_TASK_SOFT_TIME_LIMIT_SECONDS,
+        CELERY_TASK_TIME_LIMIT_SECONDS,
+        IMAGE_TASK_SOFT_TIME_LIMIT_SECONDS,
+        IMAGE_TASK_TIME_LIMIT_SECONDS,
+        MEDIA_CLEANUP_TASK_SOFT_TIME_LIMIT_SECONDS,
+        MEDIA_CLEANUP_TASK_TIME_LIMIT_SECONDS,
+    )
+    from app.tasks.media_processing import get_media_trash_retention_days
+
+    broker_url = settings.CELERY_BROKER_URL
+    result_backend = settings.CELERY_RESULT_BACKEND
+
+    return AdminRuntimeStatus(
+        database_available=await is_database_available(db),
+        redis_available=await is_redis_available(),
+        celery_broker_url=mask_url_credentials(broker_url),
+        celery_result_backend=mask_url_credentials(result_backend),
+        celery_broker_configured=bool(broker_url),
+        celery_result_backend_configured=bool(result_backend),
+        task_timeouts=AdminRuntimeTaskTimeouts(
+            task_time_limit_seconds=CELERY_TASK_TIME_LIMIT_SECONDS,
+            task_soft_time_limit_seconds=CELERY_TASK_SOFT_TIME_LIMIT_SECONDS,
+            image_task_time_limit_seconds=IMAGE_TASK_TIME_LIMIT_SECONDS,
+            image_task_soft_time_limit_seconds=IMAGE_TASK_SOFT_TIME_LIMIT_SECONDS,
+            ai_task_time_limit_seconds=AI_TASK_TIME_LIMIT_SECONDS,
+            ai_task_soft_time_limit_seconds=AI_TASK_SOFT_TIME_LIMIT_SECONDS,
+            media_cleanup_task_time_limit_seconds=MEDIA_CLEANUP_TASK_TIME_LIMIT_SECONDS,
+            media_cleanup_task_soft_time_limit_seconds=(
+                MEDIA_CLEANUP_TASK_SOFT_TIME_LIMIT_SECONDS
+            ),
+        ),
+        media_trash_retention_days=get_media_trash_retention_days(),
+        checked_at=datetime.now(timezone.utc),
+    )
+
+
 def serialize_value(value):
     """把 ORM 值转成 JSON 可存储格式。"""
     if isinstance(value, (date, datetime, UUID)):
@@ -591,6 +679,7 @@ async def get_admin_overview(
         recent_media=recent_media,
         upload_warnings=upload_warnings,
         storage=await get_storage_status(db),
+        runtime=await get_runtime_status(db),
         backups=get_backup_status(),
     )
 

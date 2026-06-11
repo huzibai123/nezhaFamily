@@ -384,6 +384,7 @@ async function handleSetCover(media?: AlbumMediaItem) {
     const updatedAlbum = await updateAlbum(albumId.value, { cover_image_url: media.url })
     if (album.value) {
       album.value.cover_image_url = updatedAlbum.cover_image_url
+      album.value.cover_media_type = updatedAlbum.cover_media_type
     }
     statusMessage.value = '已更新相册封面'
   } catch (e) {

@@ -70,6 +70,33 @@ class AdminStorageStatus(BaseModel):
     last_scanned_at: datetime
 
 
+class AdminRuntimeTaskTimeouts(BaseModel):
+    """Celery 任务超时配置"""
+
+    task_time_limit_seconds: int
+    task_soft_time_limit_seconds: int
+    image_task_time_limit_seconds: int
+    image_task_soft_time_limit_seconds: int
+    ai_task_time_limit_seconds: int
+    ai_task_soft_time_limit_seconds: int
+    media_cleanup_task_time_limit_seconds: int
+    media_cleanup_task_soft_time_limit_seconds: int
+
+
+class AdminRuntimeStatus(BaseModel):
+    """运行时只读状态"""
+
+    database_available: bool
+    redis_available: bool
+    celery_broker_url: str
+    celery_result_backend: str
+    celery_broker_configured: bool
+    celery_result_backend_configured: bool
+    task_timeouts: AdminRuntimeTaskTimeouts
+    media_trash_retention_days: int
+    checked_at: datetime
+
+
 class AdminBackupItem(BaseModel):
     """一次备份快照摘要"""
 
@@ -126,6 +153,7 @@ class AdminOverviewResponse(BaseModel):
     recent_media: list[AdminRecentMediaSummary] = Field(default_factory=list)
     upload_warnings: list[AdminRecentMediaSummary] = Field(default_factory=list)
     storage: AdminStorageStatus
+    runtime: AdminRuntimeStatus
     backups: AdminBackupStatus
 
 

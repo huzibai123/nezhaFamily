@@ -4,7 +4,7 @@ AI 家庭管家 API 与服务测试
 import asyncio
 import base64
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from httpx import AsyncClient
@@ -17,6 +17,7 @@ from app.core.security import create_access_token
 from app.models.ai import AIAlbumSuggestion, AIJob, AIProviderConfig, AIReportDraft, AIPersona
 from app.models.album import Album
 from app.models.comment import Comment
+from app.models.like import Like
 from app.models.media import MediaFile
 from app.models.notification import Notification
 from app.models.post import Post
@@ -49,6 +50,64 @@ async def ai_comment_count(db: AsyncSession, post_id) -> int:
         )
     )
     return len(result.scalars().all())
+
+
+async def ai_post_like_count(db: AsyncSession, post_id) -> int:
+    result = await db.execute(
+        select(Like.id)
+        .join(User, Like.user_id == User.id)
+        .where(
+            Like.target_type == "post",
+            Like.target_id == post_id,
+            User.is_system.is_(True),
+            User.system_type.in_(("ai_persona", "ai_system")),
+        )
+    )
+    return len(result.scalars().all())
+
+
+async def like_post_notification_count(db: AsyncSession, post_id) -> int:
+    result = await db.execute(
+        select(Notification.id).where(
+            Notification.type == "like_post",
+            Notification.target_type == "post",
+            Notification.target_id == post_id,
+        )
+    )
+    return len(result.scalars().all())
+
+
+async def create_ai_persona_for_test(
+    db: AsyncSession,
+    *,
+    name: str = "AI 点赞员",
+    enabled: bool = True,
+    auto_like_enabled: bool = True,
+    auto_comment_enabled: bool = False,
+) -> AIPersona:
+    suffix = uuid4().hex[:8]
+    persona_user = User(
+        username=f"ai_like_{suffix}",
+        email=f"ai_like_{suffix}@ai.nezha.local",
+        password_hash="!",
+        role="member",
+        is_system=True,
+        system_type="ai_persona",
+        role_in_family=name,
+    )
+    db.add(persona_user)
+    await db.flush()
+    persona = AIPersona(
+        user_id=persona_user.id,
+        name=name,
+        persona_type="helper",
+        enabled=enabled,
+        auto_comment_enabled=auto_comment_enabled,
+    )
+    persona.auto_like_enabled = auto_like_enabled
+    db.add(persona)
+    await db.flush()
+    return persona
 
 
 class CaptionFakeClient:
@@ -165,6 +224,41 @@ async def test_duplicate_persona_names_get_distinct_system_users(
     assert first.status_code == 201
     assert second.status_code == 201
     assert first.json()["user_id"] != second.json()["user_id"]
+
+
+async def test_ai_persona_auto_like_enabled_round_trips_in_metadata(
+    client: AsyncClient,
+    db: AsyncSession,
+    test_admin: User,
+):
+    create_response = await client.post(
+        "/api/v1/admin/ai/personas",
+        json={
+            "name": "点赞小助手",
+            "persona_type": "helper",
+            "auto_like_enabled": False,
+        },
+        headers=auth_headers(test_admin),
+    )
+
+    assert create_response.status_code == 201
+    created = create_response.json()
+    assert created["auto_like_enabled"] is False
+
+    persona = await db.get(AIPersona, UUID(created["id"]))
+    assert persona is not None
+    assert persona.persona_metadata["auto_like_enabled"] is False
+
+    update_response = await client.patch(
+        f"/api/v1/admin/ai/personas/{created['id']}",
+        json={"auto_like_enabled": True},
+        headers=auth_headers(test_admin),
+    )
+
+    assert update_response.status_code == 200
+    assert update_response.json()["auto_like_enabled"] is True
+    await db.refresh(persona)
+    assert persona.persona_metadata["auto_like_enabled"] is True
 
 
 async def test_ai_search_requires_enabled_provider(
@@ -1123,6 +1217,144 @@ async def test_generate_ai_comment_skips_when_ai_off_or_paused(
 
     assert comment is None
     assert await ai_comment_count(db, post.id) == 0
+    assert await ai_post_like_count(db, post.id) == 0
+
+
+@pytest.mark.parametrize(
+    ("enabled", "status"),
+    [
+        (False, "disabled"),
+        (False, "paused_billing_or_auth"),
+        (True, "paused_rate_limit"),
+    ],
+)
+async def test_generate_ai_interaction_skips_like_when_provider_off_or_paused(
+    db: AsyncSession,
+    test_user: User,
+    enabled: bool,
+    status: str,
+    monkeypatch,
+):
+    provider = active_provider()
+    provider.enabled = enabled
+    provider.status = status
+    post = Post(author_id=test_user.id, content="今天去公园玩了", media_urls=[])
+    db.add_all([provider, post])
+    await db.flush()
+    await create_ai_persona_for_test(db)
+    await db.commit()
+    await db.refresh(post)
+
+    class UnexpectedClient:
+        async def chat(self, *args, **kwargs):
+            raise AssertionError("AI client should not be called")
+
+    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider, **kwargs: UnexpectedClient())
+
+    comment = await ai_housekeeper.generate_ai_comment_for_post(db, post.id)
+    await db.commit()
+
+    assert comment is None
+    assert await ai_comment_count(db, post.id) == 0
+    assert await ai_post_like_count(db, post.id) == 0
+    assert await like_post_notification_count(db, post.id) == 0
+
+
+@pytest.mark.parametrize(
+    ("persona_enabled", "auto_like_enabled"),
+    [
+        (False, True),
+        (True, False),
+    ],
+)
+async def test_generate_ai_interaction_skips_like_when_persona_disabled_or_auto_like_disabled(
+    db: AsyncSession,
+    test_user: User,
+    persona_enabled: bool,
+    auto_like_enabled: bool,
+    monkeypatch,
+):
+    provider = active_provider()
+    post = Post(author_id=test_user.id, content="今天拍了新的照片", media_urls=[])
+    db.add_all([provider, post])
+    await db.flush()
+    await create_ai_persona_for_test(
+        db,
+        enabled=persona_enabled,
+        auto_like_enabled=auto_like_enabled,
+    )
+    await db.commit()
+    await db.refresh(post)
+
+    class UnexpectedClient:
+        async def chat(self, *args, **kwargs):
+            raise AssertionError("AI client should not be called")
+
+    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider, **kwargs: UnexpectedClient())
+
+    comment = await ai_housekeeper.generate_ai_comment_for_post(db, post.id)
+    await db.commit()
+
+    assert comment is None
+    assert await ai_post_like_count(db, post.id) == 0
+    assert await like_post_notification_count(db, post.id) == 0
+
+
+async def test_generate_ai_interaction_like_does_not_call_model_when_comments_disabled(
+    db: AsyncSession,
+    test_user: User,
+    monkeypatch,
+):
+    provider = active_provider()
+    post = Post(author_id=test_user.id, content="今天一起看云", media_urls=[])
+    db.add_all([provider, post])
+    await db.flush()
+    await create_ai_persona_for_test(db)
+    await db.commit()
+    await db.refresh(post)
+
+    class UnexpectedClient:
+        async def chat(self, *args, **kwargs):
+            raise AssertionError("AI client should not be called for auto like")
+
+    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider, **kwargs: UnexpectedClient())
+
+    comment = await ai_housekeeper.generate_ai_comment_for_post(db, post.id)
+    await db.commit()
+
+    assert comment is None
+    assert await ai_post_like_count(db, post.id) == 1
+    assert await like_post_notification_count(db, post.id) == 1
+
+
+async def test_generate_ai_interaction_repeated_task_dedupes_ai_like_and_notification(
+    db: AsyncSession,
+    test_user: User,
+    monkeypatch,
+):
+    provider = active_provider()
+    post = Post(author_id=test_user.id, content="今天一起搭积木", media_urls=[])
+    db.add_all([provider, post])
+    await db.flush()
+    await create_ai_persona_for_test(db)
+    await db.commit()
+    await db.refresh(post)
+
+    class UnexpectedClient:
+        async def chat(self, *args, **kwargs):
+            raise AssertionError("AI client should not be called for auto like")
+
+    monkeypatch.setattr(ai_housekeeper, "build_client", lambda provider, **kwargs: UnexpectedClient())
+
+    first = await ai_housekeeper.generate_ai_comment_for_post(db, post.id)
+    await db.commit()
+    second = await ai_housekeeper.generate_ai_comment_for_post(db, post.id)
+    await db.commit()
+
+    assert first is None
+    assert second is None
+    assert await ai_post_like_count(db, post.id) == 1
+    assert await like_post_notification_count(db, post.id) == 1
 
 
 async def test_generate_ai_comment_skips_when_all_auto_comment_personas_disabled(

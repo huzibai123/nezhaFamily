@@ -31,6 +31,7 @@ from app.models.ai import (
     AIReportDraft,
 )
 from app.models.comment import Comment
+from app.models.like import Like
 from app.models.media import MediaFile
 from app.models.notification import Notification
 from app.models.post import Post
@@ -164,6 +165,9 @@ async def ensure_default_personas(db: AsyncSession) -> list[AIPersona]:
     existing_result = await db.execute(select(AIPersona).order_by(AIPersona.sort_order))
     existing = list(existing_result.scalars().all())
     if existing:
+        for persona in existing:
+            if not isinstance(persona.persona_metadata, dict) or "auto_like_enabled" not in persona.persona_metadata:
+                persona.auto_like_enabled = True
         return existing
 
     defaults = [
@@ -193,6 +197,7 @@ async def ensure_default_personas(db: AsyncSession) -> list[AIPersona]:
     for item in defaults:
         user = await create_system_user_for_persona(db, item["name"], item["persona_type"])
         persona = AIPersona(user_id=user.id, enabled=True, auto_comment_enabled=True, **item)
+        persona.auto_like_enabled = True
         db.add(persona)
         personas.append(persona)
     await db.flush()
@@ -254,6 +259,20 @@ async def pick_auto_comment_persona(db: AsyncSession) -> Optional[AIPersona]:
         )
     )
     personas = list(result.scalars().all())
+    if not personas:
+        return None
+    return random.choice(personas)
+
+
+async def pick_auto_like_persona(db: AsyncSession) -> Optional[AIPersona]:
+    await ensure_default_personas(db)
+    result = await db.execute(
+        select(AIPersona).where(
+            AIPersona.enabled.is_(True),
+            AIPersona.user_id.is_not(None),
+        )
+    )
+    personas = [persona for persona in result.scalars().all() if persona.auto_like_enabled]
     if not personas:
         return None
     return random.choice(personas)
@@ -457,6 +476,8 @@ async def generate_ai_comment_for_post(db: AsyncSession, post_id: UUID) -> Optio
     if not post:
         return None
 
+    await create_ai_like_for_post(db, post)
+
     existing = await db.execute(
         select(Comment.id).where(
             Comment.post_id == post_id,
@@ -522,6 +543,48 @@ async def generate_ai_comment_for_post(db: AsyncSession, post_id: UUID) -> Optio
     provider.last_error = None
     await db.flush()
     return comment
+
+
+async def create_ai_like_for_post(db: AsyncSession, post: Post) -> Optional[Like]:
+    from app.api.notifications import build_like_post_message, create_notification
+
+    existing_ai_like = await db.execute(
+        select(Like.id)
+        .join(User, Like.user_id == User.id)
+        .where(
+            Like.target_type == "post",
+            Like.target_id == post.id,
+            User.is_system.is_(True),
+            User.system_type.in_(("ai_persona", "ai_system")),
+        )
+        .limit(1)
+    )
+    if existing_ai_like.scalar_one_or_none():
+        return None
+
+    persona = await pick_auto_like_persona(db)
+    if not persona or not persona.user_id:
+        return None
+
+    actor = await db.get(User, persona.user_id)
+    if not actor or not actor.is_system:
+        return None
+
+    like = Like(user_id=actor.id, target_type="post", target_id=post.id)
+    db.add(like)
+    await create_notification(
+        db,
+        recipient_id=post.author_id,
+        actor=actor,
+        notification_type="like_post",
+        target_type="post",
+        target_id=post.id,
+        post_id=post.id,
+        message=build_like_post_message(actor),
+        dedupe=True,
+    )
+    await db.flush()
+    return like
 
 
 async def generate_post_caption(

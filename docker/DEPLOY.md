@@ -259,6 +259,44 @@ AI_ENABLED=false \
 docker compose -f docker-compose.prod.yml config
 ```
 
+4. **Worker 与反向代理 smoke test**
+```bash
+# Celery worker 能连上 broker 并响应 inspect
+docker exec nezha-celery-worker celery -A app.tasks.celery_app inspect ping --timeout=10
+
+# 校验生产 Caddyfile；可在部署前本地执行，不需要启动整套服务
+docker run --rm \
+  -v "$PWD/docker/Caddyfile:/etc/caddy/Caddyfile:ro" \
+  -e DOMAIN=:80 \
+  -e EMAIL=admin@example.com \
+  caddy:2.7-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+```
+
+生产 compose 在 VPS 上占用 80/443。若要先用临时端口演练，不要改动并提交
+`docker-compose.prod.yml`，可以生成一次性副本：
+```bash
+sed \
+  -e 's/"80:80"/"18080:80"/' \
+  -e 's/"443:443"/"18443:443"/' \
+  -e 's/"443:443\/udp"/"18443:443\/udp"/' \
+  docker-compose.prod.yml > /tmp/nezha-compose-prod-smoke.yml
+
+POSTGRES_PASSWORD=change-me-postgres \
+REDIS_PASSWORD=change-me-redis \
+SECRET_KEY=change-me-secret-key-32-bytes-min \
+AI_KEY_ENCRYPTION_SECRET=change-me-ai-key-encryption-secret \
+ALLOWED_ORIGINS=http://localhost:18080 \
+DOMAIN=:80 \
+ADMIN_EMAIL=admin@example.com \
+docker compose -f /tmp/nezha-compose-prod-smoke.yml up -d
+
+curl -fsS http://localhost:18080/
+docker exec nezha-backend curl -fsS http://localhost:8000/health
+docker exec nezha-celery-worker celery -A app.tasks.celery_app inspect ping --timeout=10
+
+docker compose -f /tmp/nezha-compose-prod-smoke.yml down
+```
+
 ### 数据库连接失败
 
 1. **检查数据库是否健康**

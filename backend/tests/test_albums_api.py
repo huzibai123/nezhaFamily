@@ -2,12 +2,14 @@
 相册 API 测试
 测试相册 CRUD 和权限校验
 """
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.user import User
-from app.models.album import Album
+from app.models.album import Album, album_media
 from app.models.media import MediaFile
 from app.core.security import create_access_token
 
@@ -229,3 +231,115 @@ async def test_add_and_remove_media_from_album(
     )
     assert empty_detail_response.status_code == 200
     assert empty_detail_response.json()["media"] == []
+
+
+@pytest.mark.asyncio
+async def test_album_uses_latest_active_media_as_cover_when_manual_cover_missing(
+    client: AsyncClient,
+    test_user: User,
+    db: AsyncSession,
+):
+    """无手动封面时，列表和详情都使用最新有效媒体作为封面。"""
+    album = Album(name="自动封面相册", created_by=test_user.id)
+    old_media = MediaFile(
+        uploader_id=test_user.id,
+        file_type="image",
+        file_path="/media/old-cover.jpg",
+        file_size=128,
+    )
+    latest_media = MediaFile(
+        uploader_id=test_user.id,
+        file_type="video",
+        file_path="/media/latest-cover.mp4",
+        file_size=128,
+    )
+    deleted_media = MediaFile(
+        uploader_id=test_user.id,
+        file_type="image",
+        file_path="/media/deleted-cover.jpg",
+        file_size=128,
+        deleted_at=datetime.now(timezone.utc),
+    )
+    db.add_all([album, old_media, latest_media, deleted_media])
+    await db.flush()
+
+    base_time = datetime.now(timezone.utc)
+    await db.execute(
+        album_media.insert(),
+        [
+            {
+                "album_id": album.id,
+                "media_id": old_media.id,
+                "added_at": base_time - timedelta(days=2),
+            },
+            {
+                "album_id": album.id,
+                "media_id": deleted_media.id,
+                "added_at": base_time - timedelta(days=1),
+            },
+            {
+                "album_id": album.id,
+                "media_id": latest_media.id,
+                "added_at": base_time,
+            },
+        ],
+    )
+    await db.commit()
+
+    token = create_access_token(data={"user_id": str(test_user.id)})
+    headers = {"Authorization": f"Bearer {token}"}
+
+    list_response = await client.get("/api/v1/albums", headers=headers)
+    detail_response = await client.get(f"/api/v1/albums/{album.id}", headers=headers)
+
+    assert list_response.status_code == 200
+    assert detail_response.status_code == 200
+    album_payload = next(item for item in list_response.json()["albums"] if item["id"] == str(album.id))
+    assert album_payload["cover_image_url"].startswith("/media/latest-cover.mp4?token=")
+    assert album_payload["cover_media_type"] == "video"
+    assert detail_response.json()["cover_image_url"].startswith("/media/latest-cover.mp4?token=")
+    assert detail_response.json()["cover_media_type"] == "video"
+
+
+@pytest.mark.asyncio
+async def test_manual_album_cover_takes_priority_over_auto_cover(
+    client: AsyncClient,
+    test_user: User,
+    db: AsyncSession,
+):
+    """设置手动封面后，列表和详情都返回手动封面。"""
+    album = Album(
+        name="手动封面相册",
+        cover_image_url="/media/manual-cover.mp4",
+        created_by=test_user.id,
+    )
+    manual_media = MediaFile(
+        uploader_id=test_user.id,
+        file_type="video",
+        file_path="/media/manual-cover.mp4",
+        file_size=128,
+    )
+    media = MediaFile(
+        uploader_id=test_user.id,
+        file_type="image",
+        file_path="/media/auto-cover.jpg",
+        file_size=128,
+    )
+    db.add_all([album, manual_media, media])
+    await db.flush()
+    await db.execute(album_media.insert().values(album_id=album.id, media_id=media.id))
+    await db.commit()
+
+    token = create_access_token(data={"user_id": str(test_user.id)})
+    headers = {"Authorization": f"Bearer {token}"}
+
+    list_response = await client.get("/api/v1/albums", headers=headers)
+    detail_response = await client.get(f"/api/v1/albums/{album.id}", headers=headers)
+
+    assert list_response.status_code == 200
+    assert detail_response.status_code == 200
+    album_payload = next(item for item in list_response.json()["albums"] if item["id"] == str(album.id))
+    assert album_payload["cover_image_url"].startswith("/media/manual-cover.mp4?token=")
+    assert album_payload["cover_media_type"] == "video"
+    assert detail_response.json()["cover_image_url"].startswith("/media/manual-cover.mp4?token=")
+    assert detail_response.json()["cover_media_type"] == "video"

@@ -30,6 +30,16 @@ export interface PostListResponse {
   has_more: boolean
 }
 
+export interface PostListParams {
+  page?: number
+  page_size?: number
+  q?: string
+  author_id?: string
+  type?: 'image' | 'video' | 'text'
+  date_from?: string
+  date_to?: string
+}
+
 export interface Comment {
   id: string
   post_id: string
@@ -61,8 +71,12 @@ export interface LikeResponse {
 }
 
 // 获取帖子列表
-export function getPosts(page = 1, pageSize = 20): Promise<PostListResponse> {
-  return api.get('/posts', { params: { page, page_size: pageSize } })
+export function getPosts(pageOrParams: number | PostListParams = 1, pageSize = 20): Promise<PostListResponse> {
+  const params =
+    typeof pageOrParams === 'number'
+      ? { page: pageOrParams, page_size: pageSize }
+      : pageOrParams
+  return api.get('/posts', { params })
 }
 
 // 获取帖子详情

@@ -104,6 +104,26 @@ def provider_response(provider: AIProviderConfig) -> AIProviderResponse:
     )
 
 
+def persona_response(persona: AIPersona) -> AIPersonaResponse:
+    return AIPersonaResponse(
+        id=persona.id,
+        user_id=persona.user_id,
+        name=persona.name,
+        avatar_url=persona.avatar_url,
+        persona_type=persona.persona_type,
+        tone=persona.tone,
+        bio=persona.bio,
+        enabled=persona.enabled,
+        auto_comment_enabled=persona.auto_comment_enabled,
+        auto_like_enabled=persona.auto_like_enabled,
+        report_enabled=persona.report_enabled,
+        album_suggestion_enabled=persona.album_suggestion_enabled,
+        sort_order=persona.sort_order,
+        created_at=persona.created_at,
+        updated_at=persona.updated_at,
+    )
+
+
 def _clear_provider_pause_state(provider: AIProviderConfig) -> None:
     provider.failure_count = 0
     provider.last_error = None
@@ -289,7 +309,7 @@ async def get_ai_personas(
 ):
     personas = await ensure_default_personas(db)
     await db.commit()
-    return personas
+    return [persona_response(persona) for persona in personas]
 
 
 @admin_router.post("/personas", response_model=AIPersonaResponse, status_code=status.HTTP_201_CREATED)
@@ -299,11 +319,13 @@ async def create_ai_persona(
     db: AsyncSession = Depends(get_db),
 ):
     user = await create_system_user_for_persona(db, payload.name, payload.persona_type)
-    persona = AIPersona(user_id=user.id, **payload.model_dump())
+    persona_data = payload.model_dump(exclude={"auto_like_enabled"})
+    persona = AIPersona(user_id=user.id, **persona_data)
+    persona.auto_like_enabled = payload.auto_like_enabled
     db.add(persona)
     await db.commit()
     await db.refresh(persona)
-    return persona
+    return persona_response(persona)
 
 
 @admin_router.patch("/personas/{persona_id}", response_model=AIPersonaResponse)
@@ -327,7 +349,7 @@ async def update_ai_persona(
             user.role_in_family = persona.persona_type
     await db.commit()
     await db.refresh(persona)
-    return persona
+    return persona_response(persona)
 
 
 @admin_router.delete("/personas/{persona_id}", status_code=status.HTTP_204_NO_CONTENT)

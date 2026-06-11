@@ -5,6 +5,7 @@ export interface Album {
   name: string
   description?: string
   cover_image_url?: string
+  cover_media_type?: 'image' | 'video'
   created_by: string
   created_at: string
   media_count: number
@@ -22,6 +23,7 @@ export interface AlbumDetail {
   name: string
   description?: string
   cover_image_url?: string
+  cover_media_type?: 'image' | 'video'
   created_by: string
   created_at: string
   media: AlbumMediaItem[]

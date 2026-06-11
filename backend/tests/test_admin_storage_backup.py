@@ -37,8 +37,12 @@ async def test_admin_overview_includes_storage_status(
     backup_root.mkdir()
     (media_root / "example.jpg").write_bytes(b"example-media")
 
+    async def fake_redis_available() -> bool:
+        return False
+
     monkeypatch.setattr(admin_api, "MEDIA_ROOT", media_root)
     monkeypatch.setattr(admin_api, "BACKUP_ROOT", backup_root)
+    monkeypatch.setattr(admin_api, "is_redis_available", fake_redis_available)
 
     post = Post(author_id=test_admin.id, content="管理概览测试", media_urls=[])
     db.add(post)
@@ -67,10 +71,30 @@ async def test_admin_overview_includes_storage_status(
     assert payload["storage"]["media_root"]
     assert payload["storage"]["database_media_bytes"] >= 2048
     assert payload["storage"]["disk_total_bytes"] > 0
+    assert payload["runtime"]["database_available"] is True
+    assert payload["runtime"]["redis_available"] is False
+    assert payload["runtime"]["celery_broker_configured"] is True
+    assert payload["runtime"]["celery_result_backend_configured"] is True
+    assert "task_time_limit_seconds" in payload["runtime"]["task_timeouts"]
+    assert payload["runtime"]["media_trash_retention_days"] >= 1
     assert payload["backups"]["recent"] == []
     assert payload["recent_comments"][0]["content"] == "一条最近评论"
     assert payload["recent_media"][0]["uploader_username"] == test_admin.username
     assert payload["upload_warnings"][0]["warning"]
+
+
+@pytest.mark.asyncio
+async def test_admin_overview_rejects_member_user(
+    client: AsyncClient,
+    test_user: User,
+):
+    """管理员概览只允许管理员访问。"""
+    response = await client.get(
+        "/api/v1/admin/overview",
+        headers=auth_headers(test_user),
+    )
+
+    assert response.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -111,7 +135,9 @@ async def test_admin_member_surfaces_hide_system_users(
     assert overview_response.status_code == 200
     overview_payload = overview_response.json()
     assert overview_payload["user_count"] == 2
-    recent_member_names = {item["username"] for item in overview_payload["recent_members"]}
+    recent_member_names = {
+        item["username"] for item in overview_payload["recent_members"]
+    }
     recent_posting_names = {
         item["username"] for item in overview_payload["recent_posting_members"]
     }

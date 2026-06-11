@@ -64,7 +64,7 @@
 
           <div class="mt-5 grid grid-cols-3 gap-3 border-t pt-4" style="border-color:var(--border)">
             <div>
-              <p class="text-lg font-semibold leading-none" style="color:var(--text)">{{ posts.length }}</p>
+              <p class="text-lg font-semibold leading-none" style="color:var(--text)">{{ totalPostCount }}</p>
               <p class="mt-1 text-xs" style="color:var(--text-muted)">条记忆</p>
             </div>
             <div>
@@ -112,18 +112,18 @@
           class="memory-filter rounded-xl border p-4"
           style="background:var(--surface-panel);border-color:var(--border)"
         >
-          <div class="grid gap-3 md:grid-cols-[minmax(0,1fr)_10rem_10rem]">
+          <div class="grid gap-3 sm:grid-cols-2">
             <input
               v-model="searchKeyword"
-              class="filter-input rounded-lg border border-[var(--border)] bg-[var(--surface-card)] px-3 py-2.5 text-sm text-[var(--text)] outline-none placeholder:text-[var(--text-muted)]"
-              placeholder="搜索文字、家人、日期..."
+              class="filter-input rounded-lg border border-[var(--border)] bg-[var(--surface-card)] px-3 py-2.5 text-sm text-[var(--text)] outline-none placeholder:text-[var(--text-muted)] sm:col-span-2"
+              placeholder="搜索文字、家人..."
             />
             <select
-              v-model="selectedMember"
+              v-model="selectedAuthorId"
               class="filter-input rounded-lg border border-[var(--border)] bg-[var(--surface-card)] px-3 py-2.5 text-sm text-[var(--text)] outline-none"
             >
               <option value="">全部成员</option>
-              <option v-for="name in memberNames" :key="name" :value="name">{{ name }}</option>
+              <option v-for="member in memberOptions" :key="member.id" :value="member.id">{{ member.name }}</option>
             </select>
             <select
               v-model="mediaFilter"
@@ -134,9 +134,21 @@
               <option value="video">有视频</option>
               <option value="text">纯文字</option>
             </select>
+            <input
+              v-model="dateFrom"
+              type="date"
+              class="filter-input rounded-lg border border-[var(--border)] bg-[var(--surface-card)] px-3 py-2.5 text-sm text-[var(--text)] outline-none"
+              aria-label="开始日期"
+            />
+            <input
+              v-model="dateTo"
+              type="date"
+              class="filter-input rounded-lg border border-[var(--border)] bg-[var(--surface-card)] px-3 py-2.5 text-sm text-[var(--text)] outline-none"
+              aria-label="结束日期"
+            />
           </div>
           <p class="mt-3 text-xs text-[var(--text-muted)]">
-            当前显示 {{ filteredPosts.length }} / {{ posts.length }} 条记忆。
+            当前显示 {{ posts.length }} / {{ totalPostCount }} 条记忆。
           </p>
         </section>
 
@@ -150,7 +162,7 @@
         </div>
 
         <section
-          v-else-if="!filteredPosts.length"
+          v-else-if="!posts.length"
           class="empty-state rounded-xl border p-6 sm:p-8"
           style="background:var(--surface-card);border-color:var(--border)"
         >
@@ -196,6 +208,16 @@
               @click="go"
               @like="like"
             />
+          </div>
+          <div v-if="hasMore" class="flex justify-center pt-2">
+            <button
+              @click="loadMorePosts"
+              :disabled="loadingMore"
+              class="soft-button inline-flex min-w-28 items-center justify-center rounded-lg border border-[var(--border)] px-4 py-2.5 text-sm text-[var(--text-secondary)] disabled:opacity-40"
+              type="button"
+            >
+              {{ loadingMore ? '加载中' : '加载更多' }}
+            </button>
           </div>
         </section>
     </div>
@@ -251,14 +273,14 @@
                 <input
                   v-model="searchKeyword"
                   class="filter-input w-full rounded-lg border border-[var(--border)] bg-[var(--surface-card)] px-3 py-2.5 text-sm text-[var(--text)] outline-none placeholder:text-[var(--text-muted)]"
-                  placeholder="搜索文字、家人、日期..."
+                  placeholder="搜索文字、家人..."
                 />
                 <select
-                  v-model="selectedMember"
+                  v-model="selectedAuthorId"
                   class="filter-input w-full rounded-lg border border-[var(--border)] bg-[var(--surface-card)] px-3 py-2.5 text-sm text-[var(--text)] outline-none"
                 >
                   <option value="">全部成员</option>
-                  <option v-for="name in memberNames" :key="name" :value="name">{{ name }}</option>
+                  <option v-for="member in memberOptions" :key="member.id" :value="member.id">{{ member.name }}</option>
                 </select>
                 <select
                   v-model="mediaFilter"
@@ -269,6 +291,20 @@
                   <option value="video">有视频</option>
                   <option value="text">纯文字</option>
                 </select>
+                <div class="grid grid-cols-2 gap-2">
+                  <input
+                    v-model="dateFrom"
+                    type="date"
+                    class="filter-input min-w-0 rounded-lg border border-[var(--border)] bg-[var(--surface-card)] px-3 py-2.5 text-sm text-[var(--text)] outline-none"
+                    aria-label="开始日期"
+                  />
+                  <input
+                    v-model="dateTo"
+                    type="date"
+                    class="filter-input min-w-0 rounded-lg border border-[var(--border)] bg-[var(--surface-card)] px-3 py-2.5 text-sm text-[var(--text)] outline-none"
+                    aria-label="结束日期"
+                  />
+                </div>
               </div>
               <button
                 @click="resetFilters"
@@ -297,18 +333,18 @@
               <p class="text-xs font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">Members</p>
               <div class="mt-4 space-y-2">
                 <button
-                  v-for="name in memberNames"
-                  :key="name"
-                  @click="selectedMember = name"
+                  v-for="member in memberOptions"
+                  :key="member.id"
+                  @click="selectedAuthorId = member.id"
                   class="member-filter-row flex w-full items-center gap-3 rounded-lg border border-transparent px-2 py-2 text-left"
                   type="button"
                 >
                   <span class="grid h-8 w-8 place-items-center rounded-lg bg-[var(--accent-soft)] text-sm font-semibold text-[var(--accent)]">
-                    {{ initial(name) }}
+                    {{ initial(member.name) }}
                   </span>
                   <span class="min-w-0">
-                    <span class="block truncate text-sm font-medium text-[var(--text)]">{{ name }}</span>
-                    <span class="text-xs text-[var(--text-muted)]">{{ roleFor(name) }}</span>
+                    <span class="block truncate text-sm font-medium text-[var(--text)]">{{ member.name }}</span>
+                    <span class="text-xs text-[var(--text-muted)]">{{ roleFor(member.name) }}</span>
                   </span>
                 </button>
               </div>
@@ -319,7 +355,7 @@
             <div class="mb-5 flex flex-col gap-3 border-b border-[var(--border)] pb-4 xl:flex-row xl:items-center xl:justify-between">
               <div>
                 <p class="text-sm font-medium text-[var(--text)]">
-                  当前显示 {{ pagedPosts.length }} / {{ filteredPosts.length }} 条记忆
+                  当前显示 {{ pagedPosts.length }} / {{ totalPostCount }} 条记忆
                 </p>
                 <p class="mt-1 text-xs text-[var(--text-muted)]">
                   第 {{ currentPage }} / {{ totalPages }} 页
@@ -354,7 +390,7 @@
             </div>
 
             <section
-              v-else-if="!filteredPosts.length"
+              v-else-if="!pagedPosts.length"
               class="empty-state rounded-xl border border-[var(--border)] bg-[var(--surface-panel)] p-8"
             >
               <h3 class="text-xl font-semibold text-[var(--text)]">没有匹配的家庭动态</h3>
@@ -408,19 +444,19 @@
 
         <RightRail title="最近家人">
           <div class="space-y-3">
-            <div v-for="name in memberNames" :key="name" class="member-row flex items-center gap-3">
+            <div v-for="member in memberOptions" :key="member.id" class="member-row flex items-center gap-3">
               <span
                 class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-sm font-semibold"
                 style="background:rgba(255,255,255,0.06);color:var(--text-secondary)"
               >
-                {{ initial(name) }}
+                {{ initial(member.name) }}
               </span>
               <div class="min-w-0">
-                <p class="truncate text-sm font-medium" style="color:var(--text)">{{ name }}</p>
-                <p class="text-xs" style="color:var(--text-muted)">{{ roleFor(name) }}</p>
+                <p class="truncate text-sm font-medium" style="color:var(--text)">{{ member.name }}</p>
+                <p class="text-xs" style="color:var(--text-muted)">{{ roleFor(member.name) }}</p>
               </div>
             </div>
-            <p v-if="!memberNames.length" class="text-sm leading-6" style="color:var(--text-muted)">
+            <p v-if="!memberOptions.length" class="text-sm leading-6" style="color:var(--text-muted)">
               第一条动态发布后，这里会显示参与记录的家人。
             </p>
           </div>
@@ -443,7 +479,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '@/composables/useAuth'
-import { getPosts, togglePostLike, type Post } from '@/api/posts'
+import { getPosts, togglePostLike, type Post, type PostListParams } from '@/api/posts'
 import AppShell from '@/components/AppShell.vue'
 import NotificationCenter from '@/components/NotificationCenter.vue'
 import PostCard from '@/components/PostCard.vue'
@@ -454,18 +490,35 @@ interface PostGroup {
   posts: Post[]
 }
 
+interface MemberOption {
+  id: string
+  name: string
+}
+
 const router = useRouter()
 const { logout } = useAuth()
 const posts = ref<Post[]>([])
 const loading = ref(false)
+const loadingMore = ref(false)
 const errorMessage = ref('')
 const searchKeyword = ref('')
-const selectedMember = ref('')
+const debouncedSearchKeyword = ref('')
+const selectedAuthorId = ref('')
 const mediaFilter = ref<'all' | 'image' | 'video' | 'text'>('all')
+const dateFrom = ref('')
+const dateTo = ref('')
 const isDesktop = ref(false)
 const currentPage = ref(1)
+const totalPostCount = ref(0)
+const hasMore = ref(false)
+const memberMap = ref<Record<string, MemberOption>>({})
 const desktopPageSize = 8
+const mobilePageSize = 20
 let desktopMediaQuery: MediaQueryList | null = null
+let searchDebounceTimer: number | undefined
+let requestSerial = 0
+let suppressPageWatch = false
+let hasLoadedInitialPosts = false
 
 const todayLabel = new Intl.DateTimeFormat('zh-CN', {
   month: 'long',
@@ -482,7 +535,7 @@ const interactionCount = computed(() =>
 )
 
 const desktopStats = computed(() => [
-  { label: '全部记忆', value: posts.value.length, meta: '时间线动态' },
+  { label: '全部记忆', value: totalPostCount.value, meta: '时间线动态' },
   { label: '影像', value: mediaCount.value, meta: '照片和视频' },
   { label: '互动', value: interactionCount.value, meta: '点赞与评论' },
   { label: '本月', value: postsThisMonth.value, meta: '新增动态' },
@@ -496,33 +549,13 @@ const postsThisMonth = computed(() => {
   }).length
 })
 
-const memberNames = computed(() => {
-  const names = new Set<string>()
-  posts.value.forEach((post) => names.add(post.author_username))
-  return Array.from(names).slice(0, 5)
-})
+const memberOptions = computed(() =>
+  Object.values(memberMap.value)
+    .sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+    .slice(0, 12)
+)
 
-const filteredPosts = computed(() => {
-  const keyword = searchKeyword.value.trim().toLowerCase()
-  return posts.value.filter((post) => {
-    const matchesKeyword = !keyword
-      || post.content?.toLowerCase().includes(keyword)
-      || post.author_username.toLowerCase().includes(keyword)
-      || new Date(post.created_at).toLocaleDateString('zh-CN').includes(keyword)
-
-    const matchesMember = !selectedMember.value || post.author_username === selectedMember.value
-
-    const hasImage = post.media_urls?.some((media) => media.type === 'image')
-    const hasVideo = post.media_urls?.some((media) => media.type === 'video')
-    const matchesMedia =
-      mediaFilter.value === 'all'
-      || (mediaFilter.value === 'image' && hasImage)
-      || (mediaFilter.value === 'video' && hasVideo)
-      || (mediaFilter.value === 'text' && !post.media_urls?.length)
-
-    return matchesKeyword && matchesMember && matchesMedia
-  })
-})
+const memberNames = computed(() => memberOptions.value.map((member) => member.name))
 
 const anniversaryPosts = computed(() => {
   const now = new Date()
@@ -538,7 +571,7 @@ const anniversaryPosts = computed(() => {
 
 const groupedPosts = computed<PostGroup[]>(() => {
   const groups = new Map<string, Post[]>()
-  filteredPosts.value.forEach((post) => {
+  posts.value.forEach((post) => {
     const label = dateGroupLabel(post.created_at)
     const group = groups.get(label) ?? []
     group.push(post)
@@ -547,30 +580,131 @@ const groupedPosts = computed<PostGroup[]>(() => {
   return Array.from(groups, ([label, groupPosts]) => ({ label, posts: groupPosts }))
 })
 
-const totalPages = computed(() => Math.max(1, Math.ceil(filteredPosts.value.length / desktopPageSize)))
-const pagedPosts = computed(() => {
-  const start = (currentPage.value - 1) * desktopPageSize
-  return filteredPosts.value.slice(start, start + desktopPageSize)
-})
+const pageSize = computed(() => isDesktop.value ? desktopPageSize : mobilePageSize)
+const totalPages = computed(() => Math.max(1, Math.ceil(totalPostCount.value / pageSize.value)))
+const pagedPosts = computed(() => posts.value)
 
-watch([searchKeyword, selectedMember, mediaFilter], () => {
-  currentPage.value = 1
-})
-
-onMounted(async () => {
-  setupViewportWatcher()
-  loading.value = true
-  try {
-    posts.value = (await getPosts(1, 50)).posts
-  } catch (e) {
-    errorMessage.value = typeof e === 'string' ? e : '加载失败'
+watch(searchKeyword, () => {
+  if (searchDebounceTimer) {
+    window.clearTimeout(searchDebounceTimer)
   }
-  loading.value = false
+  searchDebounceTimer = window.setTimeout(() => {
+    debouncedSearchKeyword.value = searchKeyword.value.trim()
+  }, 320)
+})
+
+watch([debouncedSearchKeyword, selectedAuthorId, mediaFilter, dateFrom, dateTo], () => {
+  void loadPosts({ reset: true })
+})
+
+watch(currentPage, () => {
+  if (suppressPageWatch) {
+    suppressPageWatch = false
+    return
+  }
+  if (isDesktop.value) {
+    void loadPosts({ reset: false })
+  }
+})
+
+watch(pageSize, () => {
+  if (hasLoadedInitialPosts) {
+    void loadPosts({ reset: true })
+  }
+})
+
+onMounted(() => {
+  setupViewportWatcher()
+  void loadPosts({ reset: true })
 })
 
 onBeforeUnmount(() => {
   desktopMediaQuery?.removeEventListener('change', syncDesktopState)
+  if (searchDebounceTimer) {
+    window.clearTimeout(searchDebounceTimer)
+  }
 })
+
+async function loadPosts({ reset, page }: { reset: boolean; page?: number }) {
+  const requestedPage = page ?? (reset ? 1 : currentPage.value)
+  const serial = ++requestSerial
+  if (reset) {
+    if (currentPage.value !== 1) {
+      suppressPageWatch = true
+      currentPage.value = 1
+    }
+    loading.value = true
+  } else if (!isDesktop.value) {
+    loadingMore.value = true
+  } else {
+    loading.value = true
+  }
+  errorMessage.value = ''
+
+  try {
+    const params = buildPostParams(requestedPage)
+    const response = await getPosts(params)
+    if (serial !== requestSerial) return
+
+    posts.value = !isDesktop.value && !reset
+      ? mergePosts(posts.value, response.posts)
+      : response.posts
+    totalPostCount.value = response.total
+    hasMore.value = response.has_more
+    if (currentPage.value !== response.page) {
+      suppressPageWatch = true
+      currentPage.value = response.page
+    }
+    rememberMembers(response.posts)
+  } catch (e) {
+    if (serial === requestSerial) {
+      errorMessage.value = typeof e === 'string' ? e : '加载失败'
+    }
+  } finally {
+    if (serial === requestSerial) {
+      loading.value = false
+      loadingMore.value = false
+      hasLoadedInitialPosts = true
+    }
+  }
+}
+
+function buildPostParams(page: number): PostListParams {
+  return {
+    page,
+    page_size: pageSize.value,
+    q: debouncedSearchKeyword.value || undefined,
+    author_id: selectedAuthorId.value || undefined,
+    type: mediaFilter.value === 'all' ? undefined : mediaFilter.value,
+    date_from: dateFrom.value || undefined,
+    date_to: dateTo.value || undefined,
+  }
+}
+
+function rememberMembers(items: Post[]) {
+  if (!items.length) return
+  const nextMembers = { ...memberMap.value }
+  items.forEach((post) => {
+    nextMembers[post.author_id] = {
+      id: post.author_id,
+      name: post.author_username,
+    }
+  })
+  memberMap.value = nextMembers
+}
+
+function mergePosts(current: Post[], incoming: Post[]): Post[] {
+  const seen = new Set(current.map((post) => post.id))
+  return [
+    ...current,
+    ...incoming.filter((post) => !seen.has(post.id)),
+  ]
+}
+
+async function loadMorePosts() {
+  if (loadingMore.value || loading.value || !hasMore.value) return
+  await loadPosts({ reset: false, page: currentPage.value + 1 })
+}
 
 function go(id: string) {
   router.push(`/post/${id}`)
@@ -592,9 +726,25 @@ function handleLogout() {
 }
 
 function resetFilters() {
+  const shouldReloadFirstPage =
+    currentPage.value !== 1
+    && !searchKeyword.value
+    && !debouncedSearchKeyword.value
+    && !selectedAuthorId.value
+    && mediaFilter.value === 'all'
+    && !dateFrom.value
+    && !dateTo.value
+
   searchKeyword.value = ''
-  selectedMember.value = ''
+  debouncedSearchKeyword.value = ''
+  selectedAuthorId.value = ''
   mediaFilter.value = 'all'
+  dateFrom.value = ''
+  dateTo.value = ''
+
+  if (shouldReloadFirstPage) {
+    void loadPosts({ reset: true })
+  }
 }
 
 function previousPage() {

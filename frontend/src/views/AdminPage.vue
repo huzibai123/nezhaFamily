@@ -267,6 +267,32 @@
         </article>
 
         <article class="admin-panel rounded-xl border border-[var(--border)] bg-[var(--surface-card)] p-4 shadow-[var(--shadow-panel)] sm:p-5">
+          <div class="border-b border-[var(--border)] pb-4">
+            <p class="text-xs font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">Runtime</p>
+            <h2 class="mt-2 text-xl font-semibold text-[var(--text)]">运行状态</h2>
+            <p class="mt-2 text-sm leading-6 text-[var(--text-secondary)]">
+              Celery 与数据库连接的只读检查，适合部署后快速确认任务环境。
+            </p>
+          </div>
+
+          <div class="mt-4 grid gap-3 sm:grid-cols-2">
+            <div v-for="item in runtimeHealthCards" :key="item.label" class="rounded-lg border border-[var(--border)] bg-[var(--surface-panel)] p-3">
+              <p class="text-sm font-semibold" :class="item.ok ? 'text-[var(--accent-leaf)]' : 'text-[var(--accent)]'">
+                {{ item.ok ? '正常' : '需检查' }}
+              </p>
+              <p class="mt-1 text-xs text-[var(--text-muted)]">{{ item.label }}</p>
+            </div>
+          </div>
+
+          <div class="mt-4 space-y-2 rounded-lg border border-[var(--border)] bg-[var(--surface-panel)] p-3 text-xs leading-5 text-[var(--text-muted)]">
+            <p class="truncate">Broker: {{ runtimeStatus.celery_broker_url || '未配置' }}</p>
+            <p class="truncate">Result: {{ runtimeStatus.celery_result_backend || '未配置' }}</p>
+            <p>AI 任务超时 {{ runtimeStatus.task_timeouts.ai_task_time_limit_seconds }}s / 清理任务 {{ runtimeStatus.task_timeouts.media_cleanup_task_time_limit_seconds }}s</p>
+            <p>媒体回收站保留 {{ runtimeStatus.media_trash_retention_days }} 天</p>
+          </div>
+        </article>
+
+        <article class="admin-panel rounded-xl border border-[var(--border)] bg-[var(--surface-card)] p-4 shadow-[var(--shadow-panel)] sm:p-5">
           <div class="flex items-start justify-between gap-4">
             <div>
               <p class="text-xs font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">Backup</p>
@@ -647,6 +673,7 @@ import {
   type AdminUser,
   type AdminRole,
   type AdminBackupItem,
+  type AdminRuntimeStatus,
   type AdminStorageStatus,
   type FamilySettings,
   type FamilyThemeAssets,
@@ -783,6 +810,33 @@ const storageStatus = computed<AdminStorageStatus>(() => overview.value?.storage
   disk_free_percent: 0,
   last_scanned_at: '',
 })
+
+const runtimeStatus = computed<AdminRuntimeStatus>(() => overview.value?.runtime ?? {
+  database_available: false,
+  redis_available: false,
+  celery_broker_url: '',
+  celery_result_backend: '',
+  celery_broker_configured: false,
+  celery_result_backend_configured: false,
+  task_timeouts: {
+    task_time_limit_seconds: 0,
+    task_soft_time_limit_seconds: 0,
+    image_task_time_limit_seconds: 0,
+    image_task_soft_time_limit_seconds: 0,
+    ai_task_time_limit_seconds: 0,
+    ai_task_soft_time_limit_seconds: 0,
+    media_cleanup_task_time_limit_seconds: 0,
+    media_cleanup_task_soft_time_limit_seconds: 0,
+  },
+  media_trash_retention_days: 0,
+  checked_at: '',
+})
+const runtimeHealthCards = computed(() => [
+  { label: '数据库连接', ok: runtimeStatus.value.database_available },
+  { label: 'Redis 连接', ok: runtimeStatus.value.redis_available },
+  { label: 'Celery Broker', ok: runtimeStatus.value.celery_broker_configured },
+  { label: '结果后端', ok: runtimeStatus.value.celery_result_backend_configured },
+])
 
 const latestBackup = computed(() => overview.value?.backups?.latest ?? null)
 const recentBackups = computed(() => overview.value?.backups?.recent ?? [])

@@ -171,7 +171,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Heart, Images, MessageCircle, RefreshCw } from 'lucide-vue-next'
 import { useAuth } from '@/composables/useAuth'
@@ -203,6 +203,7 @@ const error = ref('')
 const replyingTo = ref<string | null>(null)
 const highlightedCommentId = ref('')
 const commentInputRef = ref<HTMLTextAreaElement | null>(null)
+let highlightTimer: number | undefined
 
 const topLevelComments = computed(() => comments.value)
 
@@ -220,6 +221,12 @@ onMounted(async () => {
     await focusCommentFromQuery()
   } catch (e: any) {
     error.value = e?.response?.data?.detail || e?.message || '加载失败'
+  }
+})
+
+onBeforeUnmount(() => {
+  if (highlightTimer) {
+    window.clearTimeout(highlightTimer)
   }
 })
 
@@ -295,17 +302,32 @@ async function refreshComments() {
 async function focusCommentFromQuery() {
   const commentId = typeof route.query.comment === 'string' ? route.query.comment : ''
   if (!commentId || !comments.value.length) return
+  if (!findCommentById(comments.value, commentId)) return
+  if (highlightTimer) {
+    window.clearTimeout(highlightTimer)
+  }
   highlightedCommentId.value = commentId
   await nextTick()
-  document.getElementById(`comment-${commentId}`)?.scrollIntoView({
+  const target = document.getElementById(`comment-${commentId}`)
+  target?.scrollIntoView({
     behavior: 'smooth',
     block: 'center',
   })
-  window.setTimeout(() => {
+  highlightTimer = window.setTimeout(() => {
     if (highlightedCommentId.value === commentId) {
       highlightedCommentId.value = ''
     }
+    highlightTimer = undefined
   }, 2600)
+}
+
+function findCommentById(items: Comment[], commentId: string): Comment | null {
+  for (const item of items) {
+    if (item.id === commentId) return item
+    const reply = findCommentById(item.replies || [], commentId)
+    if (reply) return reply
+  }
+  return null
 }
 
 async function handleLike() {

@@ -84,6 +84,17 @@ class AIPersona(Base):
 
     user = relationship("User", foreign_keys=[user_id])
 
+    @property
+    def auto_like_enabled(self) -> bool:
+        metadata = self.persona_metadata if isinstance(self.persona_metadata, dict) else {}
+        return bool(metadata.get("auto_like_enabled", True))
+
+    @auto_like_enabled.setter
+    def auto_like_enabled(self, value: bool) -> None:
+        metadata = dict(self.persona_metadata or {})
+        metadata["auto_like_enabled"] = bool(value)
+        self.persona_metadata = metadata
+
 
 class AIJob(Base):
     """AI 后台任务记录。"""

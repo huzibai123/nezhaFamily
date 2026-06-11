@@ -104,6 +104,29 @@ export interface AdminBackupStatus {
   recent: AdminBackupItem[]
 }
 
+export interface AdminRuntimeTaskTimeouts {
+  task_time_limit_seconds: number
+  task_soft_time_limit_seconds: number
+  image_task_time_limit_seconds: number
+  image_task_soft_time_limit_seconds: number
+  ai_task_time_limit_seconds: number
+  ai_task_soft_time_limit_seconds: number
+  media_cleanup_task_time_limit_seconds: number
+  media_cleanup_task_soft_time_limit_seconds: number
+}
+
+export interface AdminRuntimeStatus {
+  database_available: boolean
+  redis_available: boolean
+  celery_broker_url: string
+  celery_result_backend: string
+  celery_broker_configured: boolean
+  celery_result_backend_configured: boolean
+  task_timeouts: AdminRuntimeTaskTimeouts
+  media_trash_retention_days: number
+  checked_at: string
+}
+
 export interface AdminRecentComment {
   id: string
   post_id: string
@@ -156,6 +179,7 @@ export interface AdminOverview {
   recent_media?: AdminRecentMedia[]
   upload_warnings?: AdminRecentMedia[]
   storage?: AdminStorageStatus
+  runtime?: AdminRuntimeStatus
   backups?: AdminBackupStatus
 }
 
@@ -234,6 +258,7 @@ export interface AIPersona {
   bio?: string | null
   enabled: boolean
   auto_comment_enabled: boolean
+  auto_like_enabled: boolean
   report_enabled: boolean
   album_suggestion_enabled: boolean
   sort_order: number

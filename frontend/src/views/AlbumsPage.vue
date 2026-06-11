@@ -31,8 +31,15 @@
         class="album-card group overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-card)] shadow-[var(--shadow-panel)] hover:border-[var(--border-focus)]"
       >
         <div class="album-cover aspect-square bg-[color:rgb(132_74_40_/_0.12)]">
+          <video
+            v-if="album.cover_image_url && album.cover_media_type === 'video'"
+            :src="mediaUrl(album.cover_image_url)"
+            class="h-full w-full object-cover"
+            muted
+            preload="metadata"
+          />
           <img
-            v-if="album.cover_image_url"
+            v-else-if="album.cover_image_url"
             :src="mediaUrl(album.cover_image_url)"
             class="h-full w-full object-cover"
             alt=""

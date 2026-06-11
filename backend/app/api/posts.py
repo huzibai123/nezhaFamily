@@ -1,9 +1,11 @@
 """
 帖子相关的 API 路由
 """
+from datetime import date, datetime, time, timezone
+from typing import Literal, Optional
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select, func, desc
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import desc, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
@@ -31,6 +33,56 @@ router = APIRouter()
 def _response_content(content: str | None) -> str:
     """响应中纯媒体帖的 content 统一为空字符串。"""
     return content or ""
+
+
+def _normalize_pagination(page: int, page_size: int) -> tuple[int, int]:
+    if page < 1:
+        page = 1
+    if page_size < 1 or page_size > 100:
+        page_size = 20
+    return page, page_size
+
+
+def _post_filters(
+    *,
+    q: Optional[str],
+    author_id: Optional[UUID],
+    post_type: Optional[Literal["image", "video", "text"]],
+    date_from: Optional[date],
+    date_to: Optional[date],
+) -> list:
+    filters = []
+    keyword = q.strip() if q else ""
+    if keyword:
+        like_keyword = f"%{keyword}%"
+        filters.append(
+            or_(
+                Post.content.ilike(like_keyword),
+                User.username.ilike(like_keyword),
+            )
+        )
+    if author_id:
+        filters.append(Post.author_id == author_id)
+    if post_type == "text":
+        filters.append(
+            or_(
+                Post.media_urls.is_(None),
+                func.jsonb_array_length(Post.media_urls) == 0,
+            )
+        )
+    elif post_type in {"image", "video"}:
+        filters.append(Post.media_urls.contains([{"type": post_type}]))
+    if date_from:
+        filters.append(
+            Post.created_at
+            >= datetime.combine(date_from, time.min, tzinfo=timezone.utc)
+        )
+    if date_to:
+        filters.append(
+            Post.created_at
+            <= datetime.combine(date_to, time.max, tzinfo=timezone.utc)
+        )
+    return filters
 
 
 @router.post("/posts", response_model=PostResponse, status_code=status.HTTP_201_CREATED)
@@ -99,41 +151,47 @@ async def create_post(
 async def get_posts(
     page: int = 1,
     page_size: int = 20,
+    q: Optional[str] = Query(None, max_length=100),
+    author_id: Optional[UUID] = None,
+    post_type: Optional[Literal["image", "video", "text"]] = Query(None, alias="type"),
+    date_from: Optional[date] = None,
+    date_to: Optional[date] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     """获取帖子列表（时间线）"""
-    # 分页参数验证
-    if page < 1:
-        page = 1
-    if page_size < 1 or page_size > 100:
-        page_size = 20
+    page, page_size = _normalize_pagination(page, page_size)
 
     offset = (page - 1) * page_size
+    filters = _post_filters(
+        q=q,
+        author_id=author_id,
+        post_type=post_type,
+        date_from=date_from,
+        date_to=date_to,
+    )
 
     # 查询帖子总数
-    count_query = select(func.count()).select_from(Post)
+    count_query = select(func.count()).select_from(Post).join(User, User.id == Post.author_id)
+    if filters:
+        count_query = count_query.where(*filters)
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
 
     # 查询帖子列表
     query = (
-        select(Post)
+        select(Post, User)
+        .join(User, User.id == Post.author_id)
         .order_by(desc(Post.created_at))
         .offset(offset)
         .limit(page_size)
     )
+    if filters:
+        query = query.where(*filters)
     result = await db.execute(query)
-    posts = result.scalars().all()
-
-    # 获取作者信息
-    author_ids = list(set(post.author_id for post in posts))
-    if author_ids:
-        authors_query = select(User).where(User.id.in_(author_ids))
-        authors_result = await db.execute(authors_query)
-        authors = {author.id: author for author in authors_result.scalars().all()}
-    else:
-        authors = {}
+    rows = result.all()
+    posts = [post for post, _author in rows]
+    authors = {post.id: author for post, author in rows}
 
     # 获取点赞信息
     post_ids = [post.id for post in posts]
@@ -162,7 +220,7 @@ async def get_posts(
     # 构造响应
     post_responses = []
     for post in posts:
-        author = authors.get(post.author_id)
+        author = authors.get(post.id)
         if not author:
             continue
 

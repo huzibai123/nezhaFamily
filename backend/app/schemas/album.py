@@ -35,6 +35,7 @@ class AlbumResponse(BaseModel):
     name: str
     description: Optional[str]
     cover_image_url: Optional[str]
+    cover_media_type: Optional[str] = Field(None, description="封面媒体类型：image 或 video")
     created_by: UUID
     created_at: datetime
     media_count: int = Field(..., description="媒体文件数量")
@@ -48,6 +49,7 @@ class AlbumDetailResponse(BaseModel):
     name: str
     description: Optional[str]
     cover_image_url: Optional[str]
+    cover_media_type: Optional[str] = Field(None, description="封面媒体类型：image 或 video")
     created_by: UUID
     created_at: datetime
     media: list[AlbumMediaItem] = Field(..., description="相册中的媒体列表")

@@ -1,4 +1,4 @@
-import { computed, inject, onMounted, provide, reactive, ref } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, provide, reactive, ref } from 'vue'
 import type { ComputedRef, InjectionKey, Reactive, Ref } from 'vue'
 import {
   createAIJob,
@@ -54,6 +54,7 @@ export interface AdminAIContext {
   aiPendingSuggestions: ComputedRef<AIAlbumSuggestion[]>
   enabledPersonaCount: ComputedRef<number>
   autoCommentPersonaCount: ComputedRef<number>
+  autoLikePersonaCount: ComputedRef<number>
   loadAIState: () => Promise<void>
   saveAIProvider: () => Promise<void>
   testAIConnection: () => Promise<void>
@@ -91,6 +92,7 @@ export const emptyPersonaDraft = (): PersonaDraft => ({
   bio: '',
   enabled: true,
   auto_comment_enabled: true,
+  auto_like_enabled: true,
   report_enabled: true,
   album_suggestion_enabled: true,
   sort_order: 0,
@@ -115,6 +117,7 @@ export function provideAdminAI(): AdminAIContext {
   const aiPersonaCreating = ref(false)
   const aiJobRunning = ref<AIJobType | ''>('')
   const aiGeneratingReport = ref(false)
+  let aiJobPollTimer: number | undefined
 
   const aiPendingSuggestions = computed(() =>
     aiAlbumSuggestions.value.filter((suggestion) => suggestion.status === 'pending')
@@ -123,8 +126,12 @@ export function provideAdminAI(): AdminAIContext {
   const autoCommentPersonaCount = computed(() =>
     aiPersonas.value.filter((persona) => persona.enabled && persona.auto_comment_enabled).length
   )
+  const autoLikePersonaCount = computed(() =>
+    aiPersonas.value.filter((persona) => persona.enabled && persona.auto_like_enabled).length
+  )
 
   onMounted(loadAIState)
+  onBeforeUnmount(stopAIJobPolling)
 
   async function loadAIState() {
     loading.value = true
@@ -159,6 +166,7 @@ export function provideAdminAI(): AdminAIContext {
 
     if (jobsResult.status === 'fulfilled') {
       aiJobs.value = jobsResult.value
+      updateAIJobPolling()
     } else {
       failedSections.push(formatErrorMessage(jobsResult.reason, '任务加载失败'))
     }
@@ -350,6 +358,7 @@ export function provideAdminAI(): AdminAIContext {
     try {
       const job = await createAIJob(jobType)
       aiJobs.value = [job, ...aiJobs.value.filter((item) => item.id !== job.id)]
+      updateAIJobPolling()
       message.value = `${aiJobLabel(job.job_type)}已启动`
     } catch (error) {
       message.value = formatErrorMessage(error, `${aiJobLabel(jobType)}启动失败`)
@@ -410,6 +419,38 @@ export function provideAdminAI(): AdminAIContext {
     aiStatus.value = await getAIStatus()
   }
 
+  async function refreshAIJobs() {
+    try {
+      aiJobs.value = await getAIJobs()
+      updateAIJobPolling()
+    } catch (error) {
+      message.value = formatErrorMessage(error, 'AI 任务刷新失败')
+      stopAIJobPolling()
+    }
+  }
+
+  function updateAIJobPolling() {
+    const hasOpenJob = aiJobs.value.some((job) => ['pending', 'running'].includes(job.status))
+    if (hasOpenJob) {
+      startAIJobPolling()
+    } else {
+      stopAIJobPolling()
+    }
+  }
+
+  function startAIJobPolling() {
+    if (aiJobPollTimer) return
+    aiJobPollTimer = window.setInterval(() => {
+      void refreshAIJobs()
+    }, 2500)
+  }
+
+  function stopAIJobPolling() {
+    if (!aiJobPollTimer) return
+    window.clearInterval(aiJobPollTimer)
+    aiJobPollTimer = undefined
+  }
+
   function ensureAIStateLoaded(): boolean {
     if (aiStateLoaded.value) return true
     message.value = 'AI 配置仍在加载，请稍后再保存。'
@@ -438,6 +479,7 @@ export function provideAdminAI(): AdminAIContext {
     aiPendingSuggestions,
     enabledPersonaCount,
     autoCommentPersonaCount,
+    autoLikePersonaCount,
     loadAIState,
     saveAIProvider,
     testAIConnection,
@@ -472,6 +514,7 @@ export function personaToDraft(persona: AIPersona): PersonaDraft {
     bio: persona.bio || '',
     enabled: persona.enabled,
     auto_comment_enabled: persona.auto_comment_enabled,
+    auto_like_enabled: persona.auto_like_enabled,
     report_enabled: persona.report_enabled,
     album_suggestion_enabled: persona.album_suggestion_enabled,
     sort_order: persona.sort_order || 0,
@@ -487,6 +530,7 @@ export function cleanPersonaPayload(draft: PersonaDraft): AIPersonaPayload {
     bio: draft.bio?.trim() || null,
     enabled: Boolean(draft.enabled),
     auto_comment_enabled: Boolean(draft.auto_comment_enabled),
+    auto_like_enabled: Boolean(draft.auto_like_enabled),
     report_enabled: Boolean(draft.report_enabled),
     album_suggestion_enabled: Boolean(draft.album_suggestion_enabled),
     sort_order: Number(draft.sort_order || 0),

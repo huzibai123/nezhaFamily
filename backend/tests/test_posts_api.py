@@ -2,6 +2,8 @@
 帖子 API 测试
 覆盖发帖内容与媒体的契约。
 """
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
@@ -159,3 +161,95 @@ async def test_update_post_to_empty_content_without_media_fails(
 
     assert response.status_code == 400
     assert response.json()["detail"] == "帖子内容和媒体不能同时为空"
+
+
+@pytest.mark.asyncio
+async def test_get_posts_filters_by_keyword_author_type_and_date(
+    client: AsyncClient,
+    db: AsyncSession,
+    test_user: User,
+):
+    """时间线筛选应在服务端完成，并保持分页 total 与结果一致。"""
+    other_user = User(
+        username="grandma",
+        email="grandma@test.com",
+        password_hash="hashed",
+        role="member",
+    )
+    db.add(other_user)
+    await db.flush()
+
+    now = datetime.now(timezone.utc)
+    matching_post = Post(
+        author_id=test_user.id,
+        content="周末一起去公园看风筝",
+        media_urls=[media_item("/media/kite.jpg")],
+        created_at=now - timedelta(days=1),
+        updated_at=now - timedelta(days=1),
+    )
+    wrong_author = Post(
+        author_id=other_user.id,
+        content="周末一起去公园看风筝",
+        media_urls=[media_item("/media/grandma.jpg")],
+        created_at=now - timedelta(days=1),
+        updated_at=now - timedelta(days=1),
+    )
+    wrong_type = Post(
+        author_id=test_user.id,
+        content="周末一起去公园看风筝",
+        media_urls=[{"type": "video", "url": "/media/kite.mp4"}],
+        created_at=now - timedelta(days=1),
+        updated_at=now - timedelta(days=1),
+    )
+    outside_date = Post(
+        author_id=test_user.id,
+        content="周末一起去公园看风筝",
+        media_urls=[media_item("/media/old-kite.jpg")],
+        created_at=now - timedelta(days=30),
+        updated_at=now - timedelta(days=30),
+    )
+    db.add_all([matching_post, wrong_author, wrong_type, outside_date])
+    await db.commit()
+
+    response = await client.get(
+        "/api/v1/posts",
+        params={
+            "q": "风筝",
+            "author_id": str(test_user.id),
+            "type": "image",
+            "date_from": (now - timedelta(days=2)).date().isoformat(),
+            "date_to": now.date().isoformat(),
+            "page": 1,
+            "page_size": 10,
+        },
+        headers=auth_headers(test_user),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert [post["id"] for post in payload["posts"]] == [str(matching_post.id)]
+
+
+@pytest.mark.asyncio
+async def test_get_posts_filters_text_posts(
+    client: AsyncClient,
+    db: AsyncSession,
+    test_user: User,
+):
+    """type=text 只返回无媒体帖子。"""
+    text_post = Post(author_id=test_user.id, content="只有一句话", media_urls=[])
+    media_post = Post(author_id=test_user.id, content="有照片", media_urls=[media_item()])
+    db.add_all([text_post, media_post])
+    await db.commit()
+
+    response = await client.get(
+        "/api/v1/posts",
+        params={"type": "text"},
+        headers=auth_headers(test_user),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total"] == 1
+    assert payload["posts"][0]["id"] == str(text_post.id)

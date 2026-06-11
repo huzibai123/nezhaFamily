@@ -3,12 +3,15 @@
 处理图片压缩、缩略图生成等耗时操作
 """
 
+import asyncio
 import logging
 import os
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from uuid import UUID
+from celery.signals import worker_process_shutdown, worker_shutdown
 from PIL import Image
 from sqlalchemy import Column, DateTime, MetaData, String, Table, delete, select
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
@@ -46,12 +49,72 @@ _media_files_cleanup_table = Table(
 # Celery 任务会在同步 worker 里为每次异步 DB 操作创建短生命周期 event loop。
 # asyncpg 连接不能跨 event loop 复用，因此任务侧禁用连接池，避免媒体处理偶发
 # “Future attached to a different loop”。
-task_engine = create_async_engine(DATABASE_URL, echo=False, future=True, poolclass=NullPool)
+task_engine = create_async_engine(
+    DATABASE_URL, echo=False, future=True, poolclass=NullPool
+)
 TaskAsyncSession = async_sessionmaker(
     task_engine,
     class_=AsyncSession,
     expire_on_commit=False,
 )
+_task_engine_dispose_lock = threading.Lock()
+_task_engine_disposed = False
+
+
+async def dispose_task_engine() -> None:
+    """Dispose the module-level async engine once during Celery shutdown."""
+    global _task_engine_disposed
+
+    with _task_engine_dispose_lock:
+        if _task_engine_disposed:
+            return
+        _task_engine_disposed = True
+
+    try:
+        await task_engine.dispose()
+    except Exception:
+        with _task_engine_dispose_lock:
+            _task_engine_disposed = False
+        raise
+
+
+def _run_task_engine_dispose() -> None:
+    """Run async engine disposal without reusing task-owned event loops."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.run(dispose_task_engine())
+        return
+
+    dispose_errors: list[Exception] = []
+
+    def run_in_shutdown_loop() -> None:
+        try:
+            asyncio.run(dispose_task_engine())
+        except Exception as exc:
+            dispose_errors.append(exc)
+
+    thread = threading.Thread(
+        target=run_in_shutdown_loop,
+        name="nezha-media-task-engine-dispose",
+    )
+    thread.start()
+    thread.join()
+
+    if dispose_errors:
+        raise dispose_errors[0]
+
+
+@worker_shutdown.connect
+@worker_process_shutdown.connect
+def dispose_task_engine_on_celery_shutdown(**kwargs) -> None:
+    """Release task DB engine resources when a Celery worker/process exits."""
+    del kwargs
+
+    try:
+        _run_task_engine_dispose()
+    except Exception:
+        logger.exception("Celery shutdown failed to dispose media task engine")
 
 
 @dataclass(frozen=True)
@@ -213,9 +276,10 @@ def delete_expired_trashed_media_files(
 
     for record in records:
         try:
-            record_deleted_files, record_missing_files = (
-                _delete_media_record_disk_files(record)
-            )
+            (
+                record_deleted_files,
+                record_missing_files,
+            ) = _delete_media_record_disk_files(record)
         except ValueError:
             logger.warning("媒体回收站清理跳过不安全路径记录：%s", record.id)
             unsafe_record_ids.append(str(record.id))

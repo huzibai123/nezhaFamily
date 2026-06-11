@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Body
 from sqlalchemy import select, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.db.session import get_db
 from app.models.user import User
@@ -22,6 +23,61 @@ from app.schemas.album import (
 
 router = APIRouter()
 
+
+def _album_cover_url(album: Album, fallback_cover_url: str | None = None) -> str | None:
+    return signed_media_url(album.cover_image_url or fallback_cover_url)
+
+
+def _album_cover_type(
+    album: Album,
+    manual_cover_type: str | None = None,
+    fallback_cover_type: str | None = None,
+) -> str | None:
+    if album.cover_image_url:
+        return manual_cover_type or "image"
+    return fallback_cover_type
+
+
+async def _album_media_count(db: AsyncSession, album_id: UUID) -> int:
+    media_count_query = (
+        select(func.count())
+        .select_from(album_media)
+        .join(MediaFile, MediaFile.id == album_media.c.media_id)
+        .where(album_media.c.album_id == album_id, MediaFile.deleted_at.is_(None))
+    )
+    media_count_result = await db.execute(media_count_query)
+    return media_count_result.scalar() or 0
+
+
+async def _latest_album_cover(db: AsyncSession, album_id: UUID) -> tuple[str | None, str | None]:
+    result = await db.execute(
+        select(MediaFile.file_path, MediaFile.file_type)
+        .join(album_media, MediaFile.id == album_media.c.media_id)
+        .where(
+            album_media.c.album_id == album_id,
+            MediaFile.deleted_at.is_(None),
+        )
+        .order_by(album_media.c.added_at.desc(), MediaFile.created_at.desc())
+        .limit(1)
+    )
+    row = result.first()
+    return (row.file_path, row.file_type) if row else (None, None)
+
+
+async def _manual_album_cover_type(db: AsyncSession, cover_image_url: str | None) -> str | None:
+    if not cover_image_url:
+        return None
+    result = await db.execute(
+        select(MediaFile.file_type)
+        .where(
+            MediaFile.file_path == cover_image_url,
+            MediaFile.deleted_at.is_(None),
+        )
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
+
+
 @router.post("/albums", response_model=AlbumResponse)
 async def create_album(
     album_data: AlbumCreate = Body(...),
@@ -38,12 +94,14 @@ async def create_album(
     db.add(album)
     await db.commit()
     await db.refresh(album)
+    manual_cover_type = await _manual_album_cover_type(db, album.cover_image_url)
 
     return AlbumResponse(
         id=album.id,
         name=album.name,
         description=album.description,
-        cover_image_url=signed_media_url(album.cover_image_url),
+        cover_image_url=_album_cover_url(album),
+        cover_media_type=_album_cover_type(album, manual_cover_type),
         created_by=album.created_by,
         created_at=album.created_at,
         media_count=0
@@ -55,7 +113,7 @@ async def get_albums(
     db: AsyncSession = Depends(get_db),
 ):
     """获取相册列表"""
-    # 使用子查询统计每个相册的媒体数量
+    # 使用子查询统计每个相册的媒体数量，并取最新有效媒体作为自动封面。
     media_count_subquery = (
         select(
             album_media.c.album_id,
@@ -66,10 +124,47 @@ async def get_albums(
         .group_by(album_media.c.album_id)
         .subquery()
     )
+    latest_media_subquery = (
+        select(
+            album_media.c.album_id,
+            MediaFile.file_path.label("fallback_cover_url"),
+            MediaFile.file_type.label("fallback_cover_type"),
+            func.row_number()
+            .over(
+                partition_by=album_media.c.album_id,
+                order_by=(album_media.c.added_at.desc(), MediaFile.created_at.desc()),
+            )
+            .label("row_number"),
+        )
+        .join(MediaFile, MediaFile.id == album_media.c.media_id)
+        .where(MediaFile.deleted_at.is_(None))
+        .subquery()
+    )
+    manual_cover_media = aliased(MediaFile)
 
     query = (
-        select(Album, media_count_subquery.c.media_count)
+        select(
+            Album,
+            media_count_subquery.c.media_count,
+            latest_media_subquery.c.fallback_cover_url,
+            latest_media_subquery.c.fallback_cover_type,
+            manual_cover_media.file_type.label("manual_cover_type"),
+        )
         .outerjoin(media_count_subquery, Album.id == media_count_subquery.c.album_id)
+        .outerjoin(
+            latest_media_subquery,
+            and_(
+                Album.id == latest_media_subquery.c.album_id,
+                latest_media_subquery.c.row_number == 1,
+            ),
+        )
+        .outerjoin(
+            manual_cover_media,
+            and_(
+                manual_cover_media.file_path == Album.cover_image_url,
+                manual_cover_media.deleted_at.is_(None),
+            ),
+        )
         .order_by(Album.created_at.desc())
     )
     result = await db.execute(query)
@@ -80,12 +175,13 @@ async def get_albums(
             id=album.id,
             name=album.name,
             description=album.description,
-            cover_image_url=signed_media_url(album.cover_image_url),
+            cover_image_url=_album_cover_url(album, fallback_cover_url),
+            cover_media_type=_album_cover_type(album, manual_cover_type, fallback_cover_type),
             created_by=album.created_by,
             created_at=album.created_at,
             media_count=media_count or 0
         )
-        for album, media_count in rows
+        for album, media_count, fallback_cover_url, fallback_cover_type, manual_cover_type in rows
     ]
 
     return {"albums": albums}
@@ -116,12 +212,25 @@ async def get_album_detail(
     )
     media_result = await db.execute(media_query)
     media_rows = media_result.all()
+    fallback_cover_url = media_rows[0][0].file_path if media_rows else None
+    fallback_cover_type = media_rows[0][0].file_type if media_rows else None
+    manual_cover_type = next(
+        (
+            media.file_type
+            for media, _added_at in media_rows
+            if media.file_path == album.cover_image_url
+        ),
+        None,
+    )
+    if album.cover_image_url and manual_cover_type is None:
+        manual_cover_type = await _manual_album_cover_type(db, album.cover_image_url)
 
     return AlbumDetailResponse(
         id=album.id,
         name=album.name,
         description=album.description,
-        cover_image_url=signed_media_url(album.cover_image_url),
+        cover_image_url=_album_cover_url(album, fallback_cover_url),
+        cover_media_type=_album_cover_type(album, manual_cover_type, fallback_cover_type),
         created_by=album.created_by,
         created_at=album.created_at,
         media=[
@@ -163,21 +272,16 @@ async def update_album(
     await db.commit()
     await db.refresh(album)
 
-    # 计算媒体数量（用子查询避免 lazy loading）
-    media_count_query = (
-        select(func.count())
-        .select_from(album_media)
-        .join(MediaFile, MediaFile.id == album_media.c.media_id)
-        .where(album_media.c.album_id == album.id, MediaFile.deleted_at.is_(None))
-    )
-    media_count_result = await db.execute(media_count_query)
-    media_count = media_count_result.scalar() or 0
+    media_count = await _album_media_count(db, album.id)
+    fallback_cover_url, fallback_cover_type = await _latest_album_cover(db, album.id)
+    manual_cover_type = await _manual_album_cover_type(db, album.cover_image_url)
 
     return AlbumResponse(
         id=album.id,
         name=album.name,
         description=album.description,
-        cover_image_url=signed_media_url(album.cover_image_url),
+        cover_image_url=_album_cover_url(album, fallback_cover_url),
+        cover_media_type=_album_cover_type(album, manual_cover_type, fallback_cover_type),
         created_by=album.created_by,
         created_at=album.created_at,
         media_count=media_count

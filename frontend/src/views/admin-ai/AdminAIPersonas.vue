@@ -52,6 +52,10 @@
               自动评论
             </label>
             <label class="ai-check">
+              <input v-model="personaDrafts[persona.id].auto_like_enabled" type="checkbox" />
+              自动点赞
+            </label>
+            <label class="ai-check">
               <input v-model="personaDrafts[persona.id].report_enabled" type="checkbox" />
               回忆报告
             </label>
@@ -105,6 +109,10 @@
           {{ aiPersonaCreating ? '添加中' : '添加' }}
         </button>
       </div>
+      <label class="ai-check mt-3">
+        <input v-model="newPersonaDraft.auto_like_enabled" type="checkbox" />
+        新角色参与自动点赞
+      </label>
     </div>
   </section>
 </template>
