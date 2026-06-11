@@ -495,8 +495,35 @@ async def test_provider_update_hides_and_encrypts_api_key(
     result = await db.execute(select(AIProviderConfig))
     provider = result.scalar_one()
     assert provider.api_key_encrypted != "secret-key"
-    assert provider.api_key_encrypted.startswith("fernet:")
+    assert provider.api_key_encrypted.startswith(("fernet:", "fernet:v2:"))
     assert ai_housekeeper.resolve_provider_api_key(provider) == "secret-key"
+
+
+async def test_provider_api_key_v2_survives_secret_key_rotation(monkeypatch):
+    monkeypatch.setattr(ai_housekeeper.settings, "SECRET_KEY", "old-jwt-secret")
+    monkeypatch.setattr(ai_housekeeper.settings, "AI_KEY_ENCRYPTION_SECRET", "stable-ai-secret")
+    encrypted = ai_housekeeper.encrypt_ai_api_key("stable-key")
+    assert encrypted.startswith("fernet:v2:")
+
+    provider = active_provider()
+    provider.api_key_encrypted = encrypted
+
+    monkeypatch.setattr(ai_housekeeper.settings, "SECRET_KEY", "new-jwt-secret")
+    assert ai_housekeeper.resolve_provider_api_key(provider) == "stable-key"
+
+
+async def test_legacy_provider_api_key_uses_secret_key(monkeypatch):
+    monkeypatch.setattr(ai_housekeeper.settings, "SECRET_KEY", "legacy-secret")
+    monkeypatch.setattr(ai_housekeeper.settings, "AI_KEY_ENCRYPTION_SECRET", "")
+    encrypted = ai_housekeeper.encrypt_ai_api_key("legacy-key")
+    assert encrypted.startswith("fernet:")
+    assert not encrypted.startswith("fernet:v2:")
+
+    provider = active_provider()
+    provider.api_key_encrypted = encrypted
+
+    monkeypatch.setattr(ai_housekeeper.settings, "AI_KEY_ENCRYPTION_SECRET", "stable-ai-secret")
+    assert ai_housekeeper.resolve_provider_api_key(provider) == "legacy-key"
 
 
 async def test_provider_update_preserves_existing_key_when_api_key_missing_or_blank(
@@ -587,6 +614,50 @@ async def test_provider_update_clear_api_key_and_new_key_precedence(
     await db.refresh(provider)
     assert ai_housekeeper.resolve_provider_api_key(provider) == "new-key"
     assert provider.status == "active"
+
+
+async def test_provider_update_preserves_paused_state_on_plain_save(
+    client: AsyncClient,
+    db: AsyncSession,
+    test_admin: User,
+):
+    paused_at = ai_housekeeper.now_utc()
+    provider = AIProviderConfig(
+        name="暂停配置",
+        base_url="https://api.example.com/v1",
+        api_key_encrypted=ai_housekeeper.encrypt_ai_api_key("old-key"),
+        text_model="gpt-old",
+        enabled=False,
+        status="paused_billing_or_auth",
+        failure_count=2,
+        last_error="余额不足",
+        paused_reason="模型接口鉴权或余额异常",
+        notified_pause_at=paused_at,
+    )
+    db.add(provider)
+    await db.commit()
+
+    response = await client.put(
+        "/api/v1/admin/ai/providers/default",
+        json={
+            "name": "暂停配置",
+            "base_url": "https://api.example.com/v1",
+            "text_model": "gpt-new",
+            "vision_model": None,
+            "timeout_seconds": 30,
+            "enabled": False,
+        },
+        headers=auth_headers(test_admin),
+    )
+
+    assert response.status_code == 200
+    await db.refresh(provider)
+    assert provider.enabled is False
+    assert provider.status == "paused_billing_or_auth"
+    assert provider.failure_count == 2
+    assert provider.last_error == "余额不足"
+    assert provider.paused_reason == "模型接口鉴权或余额异常"
+    assert provider.notified_pause_at == paused_at
 
 
 async def test_provider_response_reports_api_key_source(

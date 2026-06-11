@@ -15,7 +15,7 @@ from typing import Iterable, Literal, Optional
 from uuid import UUID
 
 from cryptography.fernet import Fernet, InvalidToken
-from sqlalchemy import String, desc, or_, select, update
+from sqlalchemy import String, desc, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -44,6 +44,7 @@ UNSAFE_WORDS = ("讨厌", "糟糕", "丑", "笨", "病", "死亡", "吓人", "�
 OFF_CONTEXT_FOOD_WORDS = ("烤肉", "烧烤", "肉香", "好香", "想吃", "开吃", "馋")
 TOKEN_CONTEXT_WORDS = ("token", "Token", "TOKEN", "烧token", "烧 token", "烧Token", "烧 Token")
 ENCRYPTED_KEY_PREFIX = "fernet:"
+ENCRYPTED_KEY_V2_PREFIX = "fernet:v2:"
 DEFAULT_WIRE_API = "chat_completions"
 SUPPORTED_WIRE_APIS = {"chat_completions", "responses"}
 POST_CAPTION_MAX_LENGTH = 180
@@ -159,6 +160,7 @@ def provider_is_active(provider: Optional[AIProviderConfig]) -> bool:
 
 
 async def ensure_default_personas(db: AsyncSession) -> list[AIPersona]:
+    await db.execute(select(func.pg_advisory_xact_lock(0x4E455A484149)))
     existing_result = await db.execute(select(AIPersona).order_by(AIPersona.sort_order))
     existing = list(existing_result.scalars().all())
     if existing:
@@ -275,24 +277,38 @@ def build_client(
 
 
 def encrypt_ai_api_key(api_key: str) -> str:
-    token = _ai_key_cipher().encrypt(api_key.encode("utf-8")).decode("utf-8")
+    if settings.AI_KEY_ENCRYPTION_SECRET:
+        token = _ai_key_cipher(settings.AI_KEY_ENCRYPTION_SECRET).encrypt(
+            api_key.encode("utf-8")
+        ).decode("utf-8")
+        return f"{ENCRYPTED_KEY_V2_PREFIX}{token}"
+
+    token = _ai_key_cipher(settings.SECRET_KEY).encrypt(api_key.encode("utf-8")).decode("utf-8")
     return f"{ENCRYPTED_KEY_PREFIX}{token}"
 
 
 def resolve_provider_api_key(provider: AIProviderConfig) -> str:
     if not provider.api_key_encrypted:
         return settings.AI_API_KEY
+    if provider.api_key_encrypted.startswith(ENCRYPTED_KEY_V2_PREFIX):
+        token = provider.api_key_encrypted.removeprefix(ENCRYPTED_KEY_V2_PREFIX)
+        try:
+            return _ai_key_cipher(settings.AI_KEY_ENCRYPTION_SECRET).decrypt(
+                token.encode("utf-8")
+            ).decode("utf-8")
+        except InvalidToken as exc:
+            raise AIProviderError("模型 API Key 解密失败，请重新保存配置", status_code=401) from exc
     if not provider.api_key_encrypted.startswith(ENCRYPTED_KEY_PREFIX):
         return provider.api_key_encrypted
     token = provider.api_key_encrypted.removeprefix(ENCRYPTED_KEY_PREFIX)
     try:
-        return _ai_key_cipher().decrypt(token.encode("utf-8")).decode("utf-8")
+        return _ai_key_cipher(settings.SECRET_KEY).decrypt(token.encode("utf-8")).decode("utf-8")
     except InvalidToken as exc:
         raise AIProviderError("模型 API Key 解密失败，请重新保存配置", status_code=401) from exc
 
 
-def _ai_key_cipher() -> Fernet:
-    digest = hashlib.sha256(settings.SECRET_KEY.encode("utf-8")).digest()
+def _ai_key_cipher(secret: str) -> Fernet:
+    digest = hashlib.sha256(secret.encode("utf-8")).digest()
     return Fernet(base64.urlsafe_b64encode(digest))
 
 

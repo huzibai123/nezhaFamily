@@ -47,6 +47,27 @@ async def test_create_pure_media_post_success(
 
 
 @pytest.mark.asyncio
+async def test_user_posts_normalizes_pure_media_content(
+    client: AsyncClient,
+    db: AsyncSession,
+    test_user: User,
+):
+    """用户主页帖子列表也应把纯媒体帖 content 归一化为空字符串。"""
+    post = Post(author_id=test_user.id, content=None, media_urls=[media_item()])
+    db.add(post)
+    await db.commit()
+
+    response = await client.get(
+        f"/api/v1/users/{test_user.id}/posts",
+        headers=auth_headers(test_user),
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["posts"][0]["content"] == ""
+
+
+@pytest.mark.asyncio
 async def test_create_post_succeeds_when_ai_comment_enqueue_fails(
     client: AsyncClient,
     db: AsyncSession,

@@ -34,7 +34,7 @@ class Comment(Base):
     is_ai_generated = Column(Boolean, nullable=False, default=False)
     ai_persona_id = Column(UUID(as_uuid=True), ForeignKey("ai_personas.id", ondelete="SET NULL"), nullable=True)
     ai_generation_metadata = Column(JSONB, nullable=False, default=dict)
-    edited_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    edited_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     edited_at = Column(DateTime(timezone=True), nullable=True)
 
     # 时间戳

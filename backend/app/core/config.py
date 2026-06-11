@@ -90,6 +90,7 @@ class Settings(BaseSettings):
     AI_DEFAULT_VISION_MODEL: str = "gpt-4o-mini"
     AI_REQUEST_TIMEOUT_SECONDS: int = 30
     AI_FAILURE_THRESHOLD: int = 3
+    AI_KEY_ENCRYPTION_SECRET: str = ""
 
     # 邀请码配置
     INVITE_CODE_LENGTH: int = 8

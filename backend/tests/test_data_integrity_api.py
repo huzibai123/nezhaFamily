@@ -2,6 +2,7 @@
 数据一致性与并发行为测试
 """
 import asyncio
+from datetime import datetime, timezone
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -11,10 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.core.security import create_access_token
 from app.db.session import get_db
 from app.main import app
+from app.models.ai import AIPersona
 from app.models.comment import Comment
+from app.models.event import Event
 from app.models.like import Like
+from app.models.media import MediaFile
 from app.models.post import Post
 from app.models.user import User
+from app.services.ai_housekeeper import ensure_default_personas
 
 
 async def run_with_isolated_request_sessions(test_engine, callback):
@@ -220,3 +225,103 @@ async def test_delete_comment_removes_nested_descendants_and_likes(
     assert remaining_comments == 0
     assert remaining_likes == 0
     assert post.comment_count == 0
+
+
+@pytest.mark.asyncio
+async def test_user_delete_sets_editor_and_media_deleted_by_to_null(
+    db: AsyncSession,
+    test_admin: User,
+):
+    """删除编辑者/删除者用户时，审计字段应置空而不是阻塞删除。"""
+    actor = User(
+        username="cleanupactor",
+        email="cleanupactor@test.com",
+        password_hash="!",
+        role="member",
+    )
+    post = Post(author_id=test_admin.id, content="审计字段测试", media_urls=[])
+    db.add_all([actor, post])
+    await db.flush()
+    comment = Comment(
+        post_id=post.id,
+        author_id=test_admin.id,
+        content="被编辑过的评论",
+        edited_by=actor.id,
+    )
+    media = MediaFile(
+        uploader_id=test_admin.id,
+        file_type="image",
+        file_path="/media/deleted-by.jpg",
+        deleted_by=actor.id,
+    )
+    db.add_all([comment, media])
+    await db.flush()
+    comment_id = comment.id
+    media_id = media.id
+
+    await db.delete(actor)
+    await db.commit()
+
+    await db.refresh(comment)
+    await db.refresh(media)
+    assert comment.id == comment_id
+    assert media.id == media_id
+    assert comment.edited_by is None
+    assert media.deleted_by is None
+
+
+@pytest.mark.asyncio
+async def test_user_delete_cascades_created_events(
+    db: AsyncSession,
+):
+    """Event.created_by 的 ORM 与数据库约束都应保持 CASCADE。"""
+    creator = User(
+        username="eventcreator",
+        email="eventcreator@test.com",
+        password_hash="!",
+        role="member",
+    )
+    db.add(creator)
+    await db.flush()
+    event = Event(
+        title="会随创建者删除的事件",
+        start_time=datetime.now(timezone.utc),
+        created_by=creator.id,
+    )
+    db.add(event)
+    await db.flush()
+    event_id = event.id
+
+    await db.delete(creator)
+    await db.commit()
+
+    assert await db.get(Event, event_id) is None
+
+
+@pytest.mark.asyncio
+async def test_concurrent_default_persona_initialization_creates_one_set(test_engine):
+    """默认 persona 首次初始化需通过 advisory lock 串行化，避免并发重复创建。"""
+    TestingSession = async_sessionmaker(
+        test_engine,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+
+    async def initialize_once():
+        async with TestingSession() as session:
+            personas = await ensure_default_personas(session)
+            await session.commit()
+            return [persona.id for persona in personas]
+
+    await asyncio.gather(initialize_once(), initialize_once())
+
+    async with TestingSession() as session:
+        persona_count = await session.scalar(select(func.count()).select_from(AIPersona))
+        system_user_count = await session.scalar(
+            select(func.count())
+            .select_from(User)
+            .where(User.is_system.is_(True), User.system_type == "ai_persona")
+        )
+
+    assert persona_count == 3
+    assert system_user_count == 3

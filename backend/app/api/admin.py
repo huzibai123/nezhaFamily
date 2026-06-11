@@ -64,7 +64,9 @@ BACKUP_ROOT.mkdir(parents=True, exist_ok=True)
 
 async def get_user_or_404(db: AsyncSession, user_id: UUID) -> User:
     """按 ID 获取用户，不存在则返回 404。"""
-    result = await db.execute(select(User).where(User.id == user_id))
+    result = await db.execute(
+        select(User).where(User.id == user_id, User.is_system.is_(False))
+    )
     user = result.scalar_one_or_none()
     if not user:
         raise HTTPException(
@@ -77,6 +79,14 @@ async def get_user_or_404(db: AsyncSession, user_id: UUID) -> User:
 async def count_rows(db: AsyncSession, model: type) -> int:
     """统计表行数。"""
     result = await db.execute(select(func.count()).select_from(model))
+    return result.scalar() or 0
+
+
+async def count_family_users(db: AsyncSession) -> int:
+    """统计真实家庭成员数量，不包含 AI 系统用户。"""
+    result = await db.execute(
+        select(func.count()).select_from(User).where(User.is_system.is_(False))
+    )
     return result.scalar() or 0
 
 
@@ -459,7 +469,10 @@ async def get_admin_overview(
     del current_user
 
     recent_members_result = await db.execute(
-        select(User).order_by(desc(User.created_at)).limit(5)
+        select(User)
+        .where(User.is_system.is_(False))
+        .order_by(desc(User.created_at))
+        .limit(5)
     )
     recent_members = [
         AdminMemberSummary(
@@ -483,6 +496,7 @@ async def get_admin_overview(
             last_post_at,
         )
         .join(Post, Post.author_id == User.id)
+        .where(User.is_system.is_(False))
         .group_by(User.id, User.username, User.avatar_url, User.role_in_family)
         .order_by(desc(last_post_at))
         .limit(5)
@@ -565,7 +579,7 @@ async def get_admin_overview(
     ]
 
     return AdminOverviewResponse(
-        user_count=await count_rows(db, User),
+        user_count=await count_family_users(db),
         post_count=await count_rows(db, Post),
         comment_count=await count_rows(db, Comment),
         media_count=await count_rows(db, MediaFile),
@@ -672,6 +686,7 @@ async def get_admin_users(
         .outerjoin(post_counts, post_counts.c.user_id == User.id)
         .outerjoin(comment_counts, comment_counts.c.user_id == User.id)
         .outerjoin(media_counts, media_counts.c.user_id == User.id)
+        .where(User.is_system.is_(False))
         .order_by(desc(User.created_at))
     )
 

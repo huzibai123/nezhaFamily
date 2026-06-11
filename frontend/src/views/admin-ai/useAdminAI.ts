@@ -274,13 +274,7 @@ export function provideAdminAI(): AdminAIContext {
     const provider = await updateAIProvider(payload)
     providerDraft.api_key = ''
     providerDraft.clear_api_key = false
-    aiStatus.value = {
-      enabled: provider.enabled && provider.status === 'active' && provider.has_api_key,
-      status: provider.status,
-      provider,
-      personas_enabled: aiStatus.value?.personas_enabled ?? enabledPersonaCount.value,
-      auto_comment_personas: aiStatus.value?.auto_comment_personas ?? autoCommentPersonaCount.value,
-    }
+    aiStatus.value = await getAIStatus()
     syncProviderDraft(aiStatus.value)
     return provider
   }

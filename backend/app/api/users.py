@@ -166,7 +166,7 @@ async def get_user_posts(
             author_id=post.author_id,
             author_username=user.username,
             author_avatar_url=user.avatar_url,
-            content=post.content,
+            content=post.content or "",
             media_urls=[MediaItem(**sign_media_item_for_response(m)) for m in (post.media_urls or [])],
             like_count=likes_count.get(post.id, 0),
             comment_count=post.comment_count,

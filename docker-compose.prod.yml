@@ -55,6 +55,7 @@ services:
         environment:
             DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-nezha_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-nezha_family}
             SECRET_KEY: ${SECRET_KEY:?请在.env文件中设置SECRET_KEY}
+            AI_KEY_ENCRYPTION_SECRET: ${AI_KEY_ENCRYPTION_SECRET:?请在.env文件中设置AI_KEY_ENCRYPTION_SECRET}
             ALGORITHM: HS256
             DEBUG: "false"
             ENVIRONMENT: production
@@ -96,6 +97,7 @@ services:
             REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
             # JWT 配置
             SECRET_KEY: ${SECRET_KEY:?请在.env文件中设置SECRET_KEY}
+            AI_KEY_ENCRYPTION_SECRET: ${AI_KEY_ENCRYPTION_SECRET:?请在.env文件中设置AI_KEY_ENCRYPTION_SECRET}
             ALGORITHM: HS256
             ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-10080}
             # 应用配置
@@ -162,6 +164,7 @@ services:
             DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-nezha_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-nezha_family}
             REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
             SECRET_KEY: ${SECRET_KEY:?请在.env文件中设置SECRET_KEY}
+            AI_KEY_ENCRYPTION_SECRET: ${AI_KEY_ENCRYPTION_SECRET:?请在.env文件中设置AI_KEY_ENCRYPTION_SECRET}
             ALGORITHM: HS256
             ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-10080}
             CELERY_BROKER_URL: redis://:${REDIS_PASSWORD}@redis:6379/1

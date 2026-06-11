@@ -8,11 +8,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 完整产品需求见 `nezha-family.prd.md`（PRD 是唯一权威的产品文档，README 为空）。
 
-## ⚠️ 当前代码状态（2026-06-07 更新）
+## ⚠️ 当前代码状态（2026-06-11 更新）
 
 **✅ 项目已完成 MVP + 生产加固**（产品背景见 `nezha-family.prd.md`，部署说明见 `docker/DEPLOY.md`）
 
-- **几乎所有代码都未纳入 git**：`git ls-files` 只有少量文件。`backend/`、`frontend/`、`docker/` 等全部处于 untracked 状态，仅有一次 `first commit`。改动无版本保护，谨慎操作。
+- 主路径代码已纳入 git，开发时以当前 `main` 为准；不要从旧 worktree 或历史报告里直接复制未核对内容。
 
 - **✅ 核心功能已实现并验证**：
   - 用户认证（注册/登录/JWT）+ 档案编辑
@@ -119,21 +119,20 @@ docker-compose down [-v]        # -v 连数据卷一起删（重置数据库）
 ### 模型注册链（改模型/加表时必看）
 `db/base.py` 里 `Base = declarative_base()` 并导入 User/Post/Comment/Like/MediaFile；导入任一模型会触发 `app/models/__init__.py` 再额外导入 Album/Event。Alembic（`alembic/env.py`）和测试（`conftest.py`）都以 `app.db.base.Base.metadata` 为准。**新增模型必须能通过这条导入链被加载，否则 autogenerate / 建表会漏掉。**（如上所述，album/event 目前 import 了错误的 base，需先修。）
 
-### 媒体存储（注意几处坑）
-`api/media.py` 把上传文件落盘到 `backend/media/`（用 `Path(__file__)` 推算，**忽略了 docker-compose 注入的 `MEDIA_ROOT` 环境变量**），DB 里存 `url=/media/<uuid>.<ext>`。但 **`main.py` 没有 `app.mount("/media", StaticFiles(...))`**，FastAPI 本身不提供这些文件——生产靠 Caddy/nginx 提供，或需自行补 StaticFiles 挂载。媒体处理（压缩/缩略图/转码）的 Celery 任务尚未实现（`tasks/__init__.py` 只有 `celery_app`，无具体 task）。
+### 媒体存储
+媒体文件落盘路径统一走 `MEDIA_ROOT` 配置，DB 中保存原始 `/media/...` 路径，响应时按登录态签发带 token 的访问 URL。开发和生产由 Caddy/FastAPI 公开媒体访问入口；图片压缩、缩略图和回收站清理由 Celery 任务处理。
 
-### 前端结构与两套并存的 API 客户端（易踩）
+### 前端结构与 API 客户端
 - 视图在 `src/views/`、组件在 `src/components/`，路由 `src/router/index.ts`（用 `meta.requiresAuth` + `beforeEach` 守卫），登录态在 `src/composables/useAuth.ts`（`ref` 全局态 + `localStorage`）。`@` 别名指向 `src/`。
-- **存在两套 axios 用法，且不一致，统一时务必注意**：
-  - `src/api/client.ts`：共享实例，baseURL 用 `VITE_API_BASE_URL || '/api/v1'`（相对路径，走 Vite 代理），请求拦截器读 `localStorage('auth_token')`，响应错误读 `error.response.data.message`。
-  - `src/composables/useAuth.ts`：直接用裸 `axios`，**硬编码** `http://localhost:8000/api/v1`，token 存读的 key 是 `localStorage('token')`，错误读 `error.response.data.detail`。
-  - 即：**token 的 localStorage key 不一致（`auth_token` vs `token`）**，错误字段也不一致（`message` vs FastAPI 实际返回的 `detail`）。改前端鉴权/请求时先决定以哪一套为准。
+- 前端请求统一使用 `src/api/index.ts` 的 axios 实例，baseURL 为 `VITE_API_BASE_URL || '/api/v1'`，请求拦截器读取 `localStorage('token')`，错误字段读取 FastAPI 的 `detail`。
+- `useAuth.ts` 调用 `src/api/auth.ts`，不再硬编码后端地址；新增接口时优先放在 `src/api/*.ts`，让调用方直接拿业务数据对象。
 
 ## 配置与环境变量
 - `.env` 有两处：仓库根 `.env`（给 docker-compose 用，`POSTGRES_*`/`REDIS_PASSWORD`/`DOMAIN` 等）和 `backend/.env`（给后端进程用，`DATABASE_URL`/`SECRET_KEY` 等）。模板见 `.env.example`。
 - `backend/.env` 里的 `DATABASE_URL` 主机名是 **`postgres`（Docker 服务名）**，在容器内可用；**本地直接跑后端要改成 `localhost`** 才连得上。
 - 统一的开发库凭据是 `nezha_user / nezha_dev_password`，库名 `nezha_family`（测试库 `nezha_family_test`）。注意 `alembic/env.py` 的默认回退 URL 仍是过时的 `nezha:nezha123`——靠 env 覆盖，别被它误导。
 - 生产部署前必须改 `SECRET_KEY`（`openssl rand -hex 32`），开发默认值是 `dev_secret_key_change_in_production`。
+- AI Provider 数据库 Key 使用 `AI_KEY_ENCRYPTION_SECRET` 独立加密；该值必须长期稳定，不要随 JWT `SECRET_KEY` 轮换。
 
 ## 代码规范（项目约定）
 - Python：black + ruff，4 空格缩进、行长 100，必加类型提示，公共函数写中文 docstring；提交前过 `ruff check && pytest`。

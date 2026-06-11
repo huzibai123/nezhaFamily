@@ -104,6 +104,43 @@ def provider_response(provider: AIProviderConfig) -> AIProviderResponse:
     )
 
 
+def _clear_provider_pause_state(provider: AIProviderConfig) -> None:
+    provider.failure_count = 0
+    provider.last_error = None
+    provider.paused_reason = None
+    provider.notified_pause_at = None
+
+
+def _apply_provider_save_status(
+    provider: AIProviderConfig,
+    *,
+    requested_enabled: bool,
+    api_key_provided: bool,
+    clear_api_key: bool,
+    previous_status: str,
+) -> None:
+    if clear_api_key:
+        provider.enabled = False
+        provider.status = "disabled"
+        _clear_provider_pause_state(provider)
+        return
+
+    should_activate = (requested_enabled or api_key_provided) and provider_has_key(provider)
+    if should_activate:
+        provider.enabled = True
+        provider.status = "active"
+        _clear_provider_pause_state(provider)
+        return
+
+    provider.enabled = False
+    if previous_status.startswith("paused_") and not requested_enabled and not api_key_provided:
+        provider.status = previous_status
+        return
+
+    provider.status = "disabled"
+    _clear_provider_pause_state(provider)
+
+
 async def _post_caption_media_input(file: UploadFile) -> AIPostCaptionMediaInput | None:
     content_type = (file.content_type or "").lower()
     filename = file.filename or "media"
@@ -201,16 +238,18 @@ async def update_ai_provider(
     db: AsyncSession = Depends(get_db),
 ):
     provider = await get_or_create_provider(db)
+    previous_status = provider.status or "disabled"
     provider.name = payload.name
     provider.base_url = payload.base_url
     provider.text_model = payload.text_model
     provider.vision_model = payload.vision_model
     provider.timeout_seconds = payload.timeout_seconds
-    provider.enabled = payload.enabled
     api_key = payload.api_key.strip() if payload.api_key is not None else None
+    api_key_provided = bool(api_key)
+    clear_api_key = bool(payload.clear_api_key and not api_key_provided)
     if api_key:
         provider.api_key_encrypted = encrypt_ai_api_key(api_key)
-    elif payload.clear_api_key:
+    elif clear_api_key:
         provider.api_key_encrypted = None
     settings = provider_settings(provider)
     settings["wire_api"] = payload.wire_api
@@ -220,11 +259,13 @@ async def update_ai_provider(
         settings.pop("model_reasoning_effort", None)
     settings["disable_response_storage"] = payload.disable_response_storage
     provider.settings = settings
-    provider.status = "active" if provider.enabled and provider_has_key(provider) else "disabled"
-    provider.failure_count = 0
-    provider.last_error = None
-    provider.paused_reason = None
-    provider.notified_pause_at = None
+    _apply_provider_save_status(
+        provider,
+        requested_enabled=payload.enabled,
+        api_key_provided=api_key_provided,
+        clear_api_key=clear_api_key,
+        previous_status=previous_status,
+    )
     await db.commit()
     await db.refresh(provider)
     return provider_response(provider)

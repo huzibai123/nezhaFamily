@@ -51,7 +51,7 @@ class MediaFile(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     captured_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=True)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
-    deleted_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    deleted_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
 
     # 关系定义
     uploader = relationship(

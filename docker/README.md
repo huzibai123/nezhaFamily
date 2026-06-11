@@ -45,12 +45,16 @@ vim .env
 - `POSTGRES_PASSWORD`: 数据库密码（强密码）
 - `REDIS_PASSWORD`: Redis 密码（强密码）
 - `SECRET_KEY`: JWT 密钥（使用 `openssl rand -hex 32` 生成）
+- `AI_KEY_ENCRYPTION_SECRET`: AI 模型供应商数据库 Key 的独立加密密钥（使用 `openssl rand -hex 32` 生成，长期保持稳定）
 - `ALLOWED_ORIGINS`: 生产站点来源，例如 `https://family.example.com`
 - `DOMAIN`: 你的域名（如 family.example.com）
 - `ADMIN_EMAIL`: 管理员邮箱（用于 HTTPS 证书）
 - `TRUSTED_PROXY_COUNT`: 保持 `1`，对应生产链路 `Caddy -> backend`
 
-AI 管家生产默认关闭：`AI_ENABLED=false`，`AI_API_KEY` 可以留空。只有确认供应商、模型和用量预算后再在后台或 `.env` 中启用。
+AI 管家生产默认关闭：`AI_ENABLED=false`，`AI_API_KEY` 可以留空。后台保存的模型 Key 会使用
+`AI_KEY_ENCRYPTION_SECRET` 加密；该值不要随 JWT `SECRET_KEY` 轮换。旧版本已保存过后台 Key 的实例，
+请先保持旧 `SECRET_KEY` 不变、设置新的 `AI_KEY_ENCRYPTION_SECRET` 部署本版本，然后在后台重新保存
+模型供应商配置，使密文升级为新格式；之后再按需轮换 JWT `SECRET_KEY`。
 
 2. **启动生产环境**
 ```bash
@@ -234,6 +238,7 @@ docker compose -f docker-compose.prod.yml config
 POSTGRES_PASSWORD=change-me-postgres \
 REDIS_PASSWORD=change-me-redis \
 SECRET_KEY=change-me-secret-key-32-bytes-min \
+AI_KEY_ENCRYPTION_SECRET=change-me-ai-key-encryption-secret \
 ALLOWED_ORIGINS=https://family.example.com \
 DOMAIN=family.example.com \
 ADMIN_EMAIL=admin@example.com \

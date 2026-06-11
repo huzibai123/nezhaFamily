@@ -96,6 +96,7 @@ services:
             REDIS_URL: redis://:${REDIS_PASSWORD:-nezha_redis_password}@redis:6379/0
             # JWT 配置
             SECRET_KEY: dev_secret_key_change_in_production
+            AI_KEY_ENCRYPTION_SECRET: ${AI_KEY_ENCRYPTION_SECRET:-dev_ai_key_encryption_secret}
             ALGORITHM: HS256
             ACCESS_TOKEN_EXPIRE_MINUTES: 10080
             # 应用配置
@@ -162,6 +163,7 @@ services:
             DATABASE_URL: postgresql+asyncpg://nezha_user:nezha_dev_password@postgres:5432/nezha_family
             REDIS_URL: redis://:${REDIS_PASSWORD:-nezha_redis_password}@redis:6379/0
             SECRET_KEY: dev_secret_key_change_in_production
+            AI_KEY_ENCRYPTION_SECRET: ${AI_KEY_ENCRYPTION_SECRET:-dev_ai_key_encryption_secret}
             ALGORITHM: HS256
             ACCESS_TOKEN_EXPIRE_MINUTES: 10080
             CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:-nezha_redis_password}@redis:6379/1

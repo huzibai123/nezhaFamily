@@ -9,6 +9,7 @@ Production must provide these values before `docker compose -f docker-compose.pr
 - `POSTGRES_PASSWORD`: strong PostgreSQL password
 - `REDIS_PASSWORD`: strong Redis password
 - `SECRET_KEY`: JWT signing secret, generated with a command such as `openssl rand -hex 32`
+- `AI_KEY_ENCRYPTION_SECRET`: long-lived secret for encrypting AI provider keys stored in the database
 - `ALLOWED_ORIGINS`: comma-separated browser origins, for example `https://family.example.com`
 - `DOMAIN`: public hostname without `http://` or `https://`
 - `ADMIN_EMAIL`: certificate notification email for Caddy/Let's Encrypt
@@ -18,6 +19,8 @@ AI stays off by default:
 
 - `AI_ENABLED=false`
 - `AI_API_KEY` may be empty
+- Existing instances that already saved an AI provider key should keep the old `SECRET_KEY`,
+  set `AI_KEY_ENCRYPTION_SECRET`, deploy, then re-save the provider in Admin AI before rotating JWT secrets.
 
 ## Runtime Checks
 
@@ -42,6 +45,7 @@ docker compose config
 POSTGRES_PASSWORD=change-me-postgres \
 REDIS_PASSWORD=change-me-redis \
 SECRET_KEY=change-me-secret-key-32-bytes-min \
+AI_KEY_ENCRYPTION_SECRET=change-me-ai-key-encryption-secret \
 ALLOWED_ORIGINS=https://family.example.com \
 DOMAIN=family.example.com \
 ADMIN_EMAIL=admin@example.com \

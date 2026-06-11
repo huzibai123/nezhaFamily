@@ -74,6 +74,85 @@ async def test_admin_overview_includes_storage_status(
 
 
 @pytest.mark.asyncio
+async def test_admin_member_surfaces_hide_system_users(
+    client: AsyncClient,
+    db: AsyncSession,
+    test_admin: User,
+    test_user: User,
+):
+    """管理员成员列表和概览最近成员不展示 AI 系统用户。"""
+    system_user = User(
+        username="ai_hidden",
+        email="ai_hidden@ai.nezha.local",
+        password_hash="!",
+        role="member",
+        is_system=True,
+        system_type="ai_persona",
+    )
+    db.add(system_user)
+    await db.flush()
+    system_post = Post(author_id=system_user.id, content="系统用户动态", media_urls=[])
+    db.add(system_post)
+    await db.commit()
+
+    users_response = await client.get(
+        "/api/v1/admin/users",
+        headers=auth_headers(test_admin),
+    )
+    assert users_response.status_code == 200
+    usernames = {item["username"] for item in users_response.json()}
+    assert test_user.username in usernames
+    assert system_user.username not in usernames
+
+    overview_response = await client.get(
+        "/api/v1/admin/overview",
+        headers=auth_headers(test_admin),
+    )
+    assert overview_response.status_code == 200
+    overview_payload = overview_response.json()
+    assert overview_payload["user_count"] == 2
+    recent_member_names = {item["username"] for item in overview_payload["recent_members"]}
+    recent_posting_names = {
+        item["username"] for item in overview_payload["recent_posting_members"]
+    }
+    assert system_user.username not in recent_member_names
+    assert system_user.username not in recent_posting_names
+
+
+@pytest.mark.asyncio
+async def test_admin_cannot_edit_or_regenerate_invite_for_system_user(
+    client: AsyncClient,
+    db: AsyncSession,
+    test_admin: User,
+):
+    """系统用户不应被成员管理接口当作真实家庭成员操作。"""
+    system_user = User(
+        username="ai_locked",
+        email="ai_locked@ai.nezha.local",
+        password_hash="!",
+        role="member",
+        is_system=True,
+        system_type="ai_persona",
+    )
+    db.add(system_user)
+    await db.commit()
+    await db.refresh(system_user)
+
+    edit_response = await client.patch(
+        f"/api/v1/admin/users/{system_user.id}",
+        headers=auth_headers(test_admin),
+        json={"role_in_family": "不应修改"},
+    )
+    invite_response = await client.post(
+        f"/api/v1/admin/users/{system_user.id}/invite-code",
+        headers=auth_headers(test_admin),
+    )
+
+    assert edit_response.status_code == 404
+    assert invite_response.status_code == 404
+
+
+@pytest.mark.asyncio
 async def test_create_admin_backup_writes_snapshot_files(
     client: AsyncClient,
     test_admin: User,

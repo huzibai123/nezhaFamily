@@ -43,7 +43,7 @@ class Event(Base):
     reminder_minutes = Column(Integer, nullable=True)
     recurrence_rule = Column(String(200), nullable=True)
     created_by = Column(
-        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(
