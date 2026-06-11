@@ -73,6 +73,14 @@ def provider_has_key(provider: AIProviderConfig) -> bool:
     return bool(provider.api_key_encrypted or settings.AI_API_KEY)
 
 
+def provider_api_key_source(provider: AIProviderConfig) -> str:
+    if provider.api_key_encrypted:
+        return "database"
+    if settings.AI_API_KEY:
+        return "environment"
+    return "none"
+
+
 def provider_is_active(provider: Optional[AIProviderConfig]) -> bool:
     return bool(
         provider
@@ -316,6 +324,7 @@ async def test_provider_connection(db: AsyncSession, provider: AIProviderConfig)
     if not provider_has_key(provider):
         return False, "未配置 API Key"
 
+    was_enabled = bool(provider.enabled)
     try:
         client = build_client(provider)
         await client.chat(
@@ -327,17 +336,24 @@ async def test_provider_connection(db: AsyncSession, provider: AIProviderConfig)
             max_tokens=20,
         )
     except AIProviderError as error:
-        await pause_provider_for_error(db, provider, error)
+        if was_enabled and error.status_code in {401, 402, 403, 429}:
+            await pause_provider_for_error(db, provider, error)
+        else:
+            provider.last_error = str(error)[:1000]
+            provider.last_checked_at = now_utc()
+            await db.flush()
         return False, str(error)
 
-    provider.status = "active" if provider.enabled else "disabled"
+    provider.status = "active" if was_enabled else "disabled"
     provider.failure_count = 0
     provider.last_error = None
     provider.paused_reason = None
     provider.notified_pause_at = None
     provider.last_checked_at = now_utc()
     await db.flush()
-    return True, "连接测试成功"
+    if was_enabled:
+        return True, "连接测试成功"
+    return True, "连接可用，当前未启用"
 
 
 async def generate_ai_comment_for_post(db: AsyncSession, post_id: UUID) -> Optional[Comment]:

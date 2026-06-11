@@ -54,6 +54,7 @@ from app.services.ai_housekeeper import (
     get_provider,
     mark_ai_job_failed,
     now_utc,
+    provider_api_key_source,
     provider_has_key,
     provider_is_active,
     search_ai_memory,
@@ -76,6 +77,7 @@ def provider_response(provider: AIProviderConfig) -> AIProviderResponse:
         enabled=provider.enabled,
         status=provider.status,
         has_api_key=provider_has_key(provider),
+        api_key_source=provider_api_key_source(provider),
         failure_count=provider.failure_count,
         last_error=provider.last_error,
         paused_reason=provider.paused_reason,
@@ -128,8 +130,11 @@ async def update_ai_provider(
     provider.vision_model = payload.vision_model
     provider.timeout_seconds = payload.timeout_seconds
     provider.enabled = payload.enabled
-    if payload.api_key:
-        provider.api_key_encrypted = encrypt_ai_api_key(payload.api_key)
+    api_key = payload.api_key.strip() if payload.api_key is not None else None
+    if api_key:
+        provider.api_key_encrypted = encrypt_ai_api_key(api_key)
+    elif payload.clear_api_key:
+        provider.api_key_encrypted = None
     provider.status = "active" if provider.enabled and provider_has_key(provider) else "disabled"
     provider.failure_count = 0
     provider.last_error = None

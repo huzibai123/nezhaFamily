@@ -81,6 +81,56 @@ const routes: RouteRecordRaw[] = [
     name: 'AdminAI',
     component: () => import('@/views/AdminAIPage.vue'),
     meta: { requiresAuth: true, requiresAdmin: true },
+    children: [
+      {
+        path: '',
+        name: 'AdminAIOverview',
+        component: () => import('@/views/admin-ai/AdminAIOverview.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true },
+      },
+      {
+        path: 'overview',
+        name: 'AdminAIOverviewAlias',
+        redirect: { name: 'AdminAIOverview' },
+        meta: { requiresAuth: true, requiresAdmin: true },
+      },
+      {
+        path: 'provider',
+        name: 'AdminAIProvider',
+        component: () => import('@/views/admin-ai/AdminAIProvider.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true },
+      },
+      {
+        path: 'personas',
+        name: 'AdminAIPersonas',
+        component: () => import('@/views/admin-ai/AdminAIPersonas.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true },
+      },
+      {
+        path: 'jobs',
+        name: 'AdminAIJobs',
+        component: () => import('@/views/admin-ai/AdminAIJobs.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true },
+      },
+      {
+        path: 'reports',
+        name: 'AdminAIReports',
+        component: () => import('@/views/admin-ai/AdminAIReports.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true },
+      },
+      {
+        path: 'suggestions',
+        name: 'AdminAISuggestions',
+        component: () => import('@/views/admin-ai/AdminAISuggestions.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true },
+      },
+      {
+        path: 'profiles',
+        name: 'AdminAIProfiles',
+        component: () => import('@/views/admin-ai/AdminAIProfiles.vue'),
+        meta: { requiresAuth: true, requiresAdmin: true },
+      },
+    ],
   },
 ]
 

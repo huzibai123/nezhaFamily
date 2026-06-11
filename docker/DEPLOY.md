@@ -45,8 +45,12 @@ vim .env
 - `POSTGRES_PASSWORD`: 数据库密码（强密码）
 - `REDIS_PASSWORD`: Redis 密码（强密码）
 - `SECRET_KEY`: JWT 密钥（使用 `openssl rand -hex 32` 生成）
+- `ALLOWED_ORIGINS`: 生产站点来源，例如 `https://family.example.com`
 - `DOMAIN`: 你的域名（如 family.example.com）
 - `ADMIN_EMAIL`: 管理员邮箱（用于 HTTPS 证书）
+- `TRUSTED_PROXY_COUNT`: 保持 `1`，对应生产链路 `Caddy -> backend`
+
+AI 管家生产默认关闭：`AI_ENABLED=false`，`AI_API_KEY` 可以留空。只有确认供应商、模型和用量预算后再在后台或 `.env` 中启用。
 
 2. **启动生产环境**
 ```bash
@@ -81,9 +85,16 @@ docker exec \
 - **redis**: Redis 7 缓存和任务队列
 - **migrate**: 一次性数据库迁移任务
 - **backend**: FastAPI 后端服务
-- **celery-worker**: Celery 异步任务处理
+- **celery-worker**: Celery 异步任务处理，使用 Redis DB 1/2 作为 broker/result backend
 - **frontend**: Vue 3 前端（开发环境）或 Nginx 静态服务（生产环境）
 - **caddy**: 反向代理和自动 HTTPS
+
+### 健康检查与路由
+
+- 后端健康检查端点为 `GET /health`；开发和生产 Compose 都通过容器内 `http://localhost:8000/health` 检查 backend。
+- 开发 Caddy (`docker/Caddyfile.dev`) 监听 Compose 内部 `:80`，宿主机通过 `8080` 访问；`/api/*` 和 `/media/*` 代理到 backend，其他请求代理到 Vite `frontend:3000`，支持 HMR WebSocket。
+- 生产 Caddy (`docker/Caddyfile`) 使用 `DOMAIN` 和 `ADMIN_EMAIL` 自动申请 HTTPS；`/api/*` 代理到 backend 并配置 upstream health check，`/media/*` 代理到 backend，其他请求代理到 `frontend:80`。
+- 后端生产文档页默认关闭；开发环境 API 文档为 `http://localhost:8000/api/docs`。
 
 ### 端口映射
 
@@ -208,6 +219,13 @@ sudo lsof -i :80
 sudo lsof -i :443
 ```
 
+开发机如果 `8080` 或 `8443` 被占用，可临时覆盖端口后再做 smoke test，例如：
+```bash
+docker compose up -d
+# 或先在 docker-compose.yml 中临时改为 18080:80、18443:443，验证后不要提交本地端口改动。
+curl -fsS http://localhost:8080/health || curl -fsS http://localhost:8080/
+```
+
 2. **查看服务日志**
 ```bash
 docker-compose logs backend
@@ -219,6 +237,20 @@ docker-compose logs backend
 cat .env
 
 # 验证 Docker Compose 配置
+docker compose config
+docker compose -f docker-compose.prod.yml config
+```
+
+生产配置 dry-run 可使用一次性环境变量，不需要写入 `.env`：
+```bash
+POSTGRES_PASSWORD=change-me-postgres \
+REDIS_PASSWORD=change-me-redis \
+SECRET_KEY=change-me-secret-key-32-bytes-min \
+ALLOWED_ORIGINS=https://family.example.com \
+DOMAIN=family.example.com \
+ADMIN_EMAIL=admin@example.com \
+TRUSTED_PROXY_COUNT=1 \
+AI_ENABLED=false \
 docker compose -f docker-compose.prod.yml config
 ```
 

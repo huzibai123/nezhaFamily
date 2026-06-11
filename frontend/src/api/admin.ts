@@ -183,6 +183,7 @@ export interface AIProvider {
   enabled: boolean
   status: AIProviderStatus
   has_api_key: boolean
+  api_key_source?: string | null
   failure_count: number
   last_error?: string | null
   paused_reason?: string | null
@@ -196,6 +197,7 @@ export interface AIProviderUpdate {
   name: string
   base_url: string
   api_key?: string | null
+  clear_api_key?: boolean
   text_model: string
   vision_model?: string | null
   timeout_seconds: number

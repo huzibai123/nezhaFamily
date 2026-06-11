@@ -4,8 +4,12 @@
 """
 import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api import posts as posts_api
 from app.core.security import create_access_token
+from app.models.post import Post
 from app.models.user import User
 
 
@@ -40,6 +44,34 @@ async def test_create_pure_media_post_success(
     assert payload["content"] == ""
     assert len(payload["media_urls"]) == 1
     assert payload["media_urls"][0]["url"].startswith("/media/family-photo.jpg?token=")
+
+
+@pytest.mark.asyncio
+async def test_create_post_succeeds_when_ai_comment_enqueue_fails(
+    client: AsyncClient,
+    db: AsyncSession,
+    test_user: User,
+    monkeypatch,
+):
+    """测试 AI 自动评论入队失败不影响发帖主链路。"""
+
+    def failing_delay(*args, **kwargs):
+        raise RuntimeError("redis down")
+
+    monkeypatch.setattr(posts_api.generate_ai_comment, "delay", failing_delay)
+
+    response = await client.post(
+        "/api/v1/posts",
+        json={"content": "今天也要好好记录一下"},
+        headers=auth_headers(test_user),
+    )
+
+    assert response.status_code == 201
+    post_id = response.json()["id"]
+    result = await db.execute(select(Post).where(Post.id == post_id))
+    post = result.scalar_one_or_none()
+    assert post is not None
+    assert post.content == "今天也要好好记录一下"
 
 
 @pytest.mark.asyncio
