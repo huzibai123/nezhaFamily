@@ -7,6 +7,8 @@
 - 数据库迁移、管理员初始化、备份与恢复演练。
 - Caddy validate、worker ping、生产 smoke checklist。
 
+发布候选验收顺序见仓库根目录 [../RELEASE_CHECKLIST.md](../RELEASE_CHECKLIST.md)。
+
 快速开发启动：
 
 ```bash

@@ -1,6 +1,7 @@
 # 测试指南
 
 本文档说明哪吒家庭的本地门禁、正式 E2E、部署配置校验和生产 smoke 建议。
+发布前完整验收顺序见 [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md)。
 
 ## 前置条件
 

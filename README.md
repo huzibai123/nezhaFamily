@@ -89,6 +89,7 @@ npm --prefix frontend run test:e2e
 ```
 
 完整测试说明见 [TESTING.md](./TESTING.md)。
+发布候选验收清单见 [RELEASE_CHECKLIST.md](./RELEASE_CHECKLIST.md)。
 
 ## 开发
 

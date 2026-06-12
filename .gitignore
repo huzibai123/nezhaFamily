@@ -58,6 +58,7 @@ ops.local*.md
 
 # Logs
 *.log
+logs/
 
 # Media files (uploaded by users)
 backend/uploads/
