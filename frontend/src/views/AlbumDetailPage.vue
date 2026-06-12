@@ -103,7 +103,7 @@
 
       <section
         v-if="selectedMediaIds.length"
-        class="bulk-bar mb-4 rounded-lg border border-[var(--border-focus)] bg-[var(--surface-card)] p-3 shadow-[var(--shadow-panel)]"
+        class="bulk-bar sticky bottom-3 z-20 mb-4 rounded-lg border border-[var(--border-focus)] bg-[var(--surface-card)] p-3 shadow-[var(--shadow-panel)]"
       >
         <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div class="text-sm text-[var(--text-secondary)]">
@@ -206,8 +206,19 @@
         </article>
       </div>
 
-      <div v-else class="rounded-lg border border-dashed border-[var(--border)] bg-[var(--surface-card)] p-10 text-center">
-        <p class="text-base text-[var(--text-muted)]">这个相册还没有照片。</p>
+      <div v-else class="ui-empty">
+        <p class="text-base font-medium text-[var(--text)]">这个相册还没有照片。</p>
+        <p class="mx-auto mt-2 max-w-sm text-sm leading-6 text-[var(--text-muted)]">
+          可以从媒体库挑选照片，也可以在发布新记忆时直接加入这个相册。
+        </p>
+        <button
+          @click="toggleMediaPicker"
+          class="soft-button mt-5 inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--border)] px-4 py-2.5 text-sm text-[var(--text-secondary)]"
+          type="button"
+        >
+          <Plus class="h-4 w-4" :stroke-width="2" />
+          添加媒体
+        </button>
       </div>
     </div>
 

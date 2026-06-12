@@ -29,7 +29,7 @@
           <button
             @click="loadAIState"
             :disabled="loading"
-            class="soft-button inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--border)] px-4 py-2.5 text-sm text-[var(--text-secondary)] disabled:opacity-50"
+            class="soft-button inline-flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--border)] px-4 py-2.5 text-sm text-[var(--text-secondary)] disabled:opacity-50 sm:w-auto"
             type="button"
           >
             <RefreshCw :size="16" stroke-width="2" aria-hidden="true" />
@@ -40,13 +40,13 @@
     </template>
 
     <div class="space-y-6">
-      <nav class="rounded-xl border border-[var(--border)] bg-[var(--surface-card)] p-2 shadow-[var(--shadow-panel)]" aria-label="AI 管家二级导航">
-        <div class="grid grid-cols-2 gap-2 sm:grid-cols-4 xl:grid-cols-7">
+      <nav class="overflow-hidden rounded-xl border border-[var(--border)] bg-[var(--surface-card)] p-2 shadow-[var(--shadow-panel)]" aria-label="AI 管家二级导航">
+        <div class="ai-tab-row flex gap-2 overflow-x-auto">
           <RouterLink
             v-for="item in navItems"
             :key="item.to"
             :to="item.to"
-            class="ai-tab inline-flex min-h-10 items-center justify-center rounded-lg px-3 py-2 text-center text-sm font-medium text-[var(--text-secondary)]"
+            class="ai-tab inline-flex min-h-10 min-w-[5.5rem] shrink-0 items-center justify-center rounded-lg px-3 py-2 text-center text-sm font-medium text-[var(--text-secondary)]"
             active-class="!bg-[var(--text)] !text-[var(--surface)]"
           >
             {{ item.label }}
@@ -56,7 +56,7 @@
 
       <p
         v-if="message"
-        class="rounded-lg border border-[var(--border-focus)] bg-[var(--accent-soft)] px-4 py-3 text-sm text-[var(--accent)]"
+        class="ui-feedback ui-feedback-success"
       >
         {{ message }}
       </p>

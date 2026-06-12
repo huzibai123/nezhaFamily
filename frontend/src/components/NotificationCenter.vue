@@ -266,11 +266,13 @@ function formatTime(value: string): string {
 
 .notification-item {
   background: rgba(255, 248, 235, 0.4);
+  min-height: 4rem;
 }
 
 .notification-item.is-unread {
   border-color: rgba(217, 77, 48, 0.18);
   background: rgba(217, 77, 48, 0.08);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .notification-item:hover,

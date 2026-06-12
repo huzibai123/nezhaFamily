@@ -49,7 +49,7 @@ const contentGridClass = computed(() => {
       <DesktopSidebar class="hidden lg:flex" :family-name="displayFamilyName" :logo-url="logoUrl" />
 
       <div class="min-w-0">
-        <main class="shell-main mx-auto w-full px-4 pb-14 pt-5 sm:px-6 lg:px-8 lg:py-8 xl:px-10">
+        <main class="shell-main mx-auto w-full px-4 pb-16 pt-5 sm:px-6 lg:px-8 lg:py-8 xl:px-10">
           <div
             class="mx-auto mb-5 w-full"
             :class="shellWidthClass"
@@ -144,7 +144,7 @@ const contentGridClass = computed(() => {
 }
 
 .shell-main {
-  animation: shell-content-in 420ms ease-out both;
+  animation: shell-content-in 420ms ease-out;
 }
 
 @keyframes shell-content-in {

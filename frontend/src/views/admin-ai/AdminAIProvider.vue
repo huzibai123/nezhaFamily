@@ -5,11 +5,11 @@
         <p class="text-xs font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">Provider</p>
         <h2 class="mt-2 text-xl font-semibold text-[var(--text)]">模型供应商</h2>
       </div>
-      <div class="flex flex-wrap gap-2">
+      <div class="grid gap-2 sm:flex sm:flex-wrap">
         <button
           @click="testAIConnection"
           :disabled="!aiStateLoaded || loading || aiTestingProvider || aiSavingProvider"
-          class="soft-button inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-4 py-2.5 text-sm text-[var(--text-secondary)] disabled:opacity-50"
+          class="soft-button inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--border)] px-4 py-2.5 text-sm text-[var(--text-secondary)] disabled:opacity-50"
           type="button"
         >
           <FlaskConical :size="16" stroke-width="2" aria-hidden="true" />
@@ -18,7 +18,7 @@
         <button
           @click="saveAIProvider"
           :disabled="!aiStateLoaded || loading || aiSavingProvider || aiTestingProvider"
-          class="primary-button inline-flex items-center gap-2 rounded-lg bg-[var(--text)] px-4 py-2.5 text-sm font-medium text-[var(--surface)] disabled:opacity-50"
+          class="primary-button inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--text)] px-4 py-2.5 text-sm font-medium text-[var(--surface)] disabled:opacity-50"
           type="button"
         >
           <Save :size="16" stroke-width="2" aria-hidden="true" />
@@ -92,7 +92,7 @@
           <button
             @click="clearAIProviderKey"
             :disabled="!aiStateLoaded || loading || aiSavingProvider || aiTestingProvider || aiStatus?.provider?.api_key_source !== 'database'"
-            class="soft-button inline-flex w-fit items-center gap-2 rounded-lg border border-[var(--border)] px-4 py-2 text-sm text-[var(--text-secondary)] disabled:opacity-50"
+            class="soft-button inline-flex w-full items-center justify-center gap-2 rounded-lg border border-[var(--border)] px-4 py-2 text-sm text-[var(--text-secondary)] disabled:opacity-50 sm:w-fit"
             type="button"
           >
             <KeyRound :size="15" stroke-width="2" aria-hidden="true" />

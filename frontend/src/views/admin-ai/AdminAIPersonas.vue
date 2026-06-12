@@ -28,8 +28,8 @@
             <div class="min-w-0 flex-1">
               <p class="text-sm font-medium text-[var(--text)]">角色头像</p>
               <p class="mt-1 text-xs text-[var(--text-muted)]">会显示在 AI 评论、点赞和通知里。</p>
-              <div class="mt-3 flex flex-wrap gap-2">
-                <label class="soft-button inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)]">
+              <div class="mt-3 grid gap-2 sm:flex sm:flex-wrap">
+                <label class="soft-button inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)]">
                   <Camera :size="15" stroke-width="2" aria-hidden="true" />
                   {{ uploadingPersonaId === persona.id ? '上传中' : '更换头像' }}
                   <input
@@ -44,7 +44,7 @@
                   v-if="personaDrafts[persona.id].avatar_url"
                   @click="clearPersonaAvatar(persona)"
                   :disabled="uploadingPersonaId === persona.id || aiPersonaSavingId === persona.id"
-                  class="soft-button inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)] disabled:opacity-40"
+                  class="soft-button inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)] disabled:opacity-40"
                   type="button"
                 >
                   <Trash2 :size="15" stroke-width="2" aria-hidden="true" />
@@ -73,7 +73,7 @@
 
           <label class="ai-field">
             <span>语气</span>
-            <input v-model="personaDrafts[persona.id].tone" class="ai-input" placeholder="温暖、真诚、简短" />
+            <textarea v-model="personaDrafts[persona.id].tone" class="ai-input min-h-16 resize-y" placeholder="温暖、真诚、简短" />
           </label>
 
           <div class="grid gap-3 sm:grid-cols-3">
@@ -131,11 +131,11 @@
             </label>
           </div>
 
-          <div class="flex flex-wrap gap-2 pt-1">
+          <div class="grid gap-2 pt-1 sm:flex sm:flex-wrap">
             <button
               @click="saveAIPersona(persona)"
               :disabled="aiPersonaSavingId === persona.id"
-              class="primary-button inline-flex items-center gap-2 rounded-lg bg-[var(--text)] px-4 py-2 text-sm font-medium text-[var(--surface)] disabled:opacity-50"
+              class="primary-button inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--text)] px-4 py-2 text-sm font-medium text-[var(--surface)] disabled:opacity-50"
               type="button"
             >
               <Check :size="15" stroke-width="2" aria-hidden="true" />
@@ -143,7 +143,7 @@
             </button>
             <button
               @click="disableAIPersona(persona)"
-              class="soft-button inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-4 py-2 text-sm text-[var(--text-secondary)]"
+              class="soft-button inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--border)] px-4 py-2 text-sm text-[var(--text-secondary)]"
               type="button"
             >
               <Power :size="15" stroke-width="2" aria-hidden="true" />
@@ -167,8 +167,8 @@
         </div>
         <div class="min-w-0 flex-1">
           <p class="text-sm font-medium text-[var(--text)]">新角色头像</p>
-          <div class="mt-2 flex flex-wrap gap-2">
-            <label class="soft-button inline-flex cursor-pointer items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)]">
+          <div class="mt-2 grid gap-2 sm:flex sm:flex-wrap">
+            <label class="soft-button inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)]">
               <Camera :size="15" stroke-width="2" aria-hidden="true" />
               {{ newPersonaAvatarUploading ? '上传中' : '上传头像' }}
               <input
@@ -183,7 +183,7 @@
               v-if="newPersonaDraft.avatar_url"
               @click="newPersonaDraft.avatar_url = ''"
               :disabled="newPersonaAvatarUploading || aiPersonaCreating"
-              class="soft-button inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)] disabled:opacity-40"
+              class="soft-button inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)] disabled:opacity-40"
               type="button"
             >
               <Trash2 :size="15" stroke-width="2" aria-hidden="true" />
@@ -201,7 +201,7 @@
           <option value="pet_cat">小猫</option>
           <option value="custom">自定义</option>
         </select>
-        <input v-model="newPersonaDraft.tone" class="ai-input" placeholder="语气" />
+        <textarea v-model="newPersonaDraft.tone" class="ai-input min-h-12 resize-y" placeholder="语气" />
         <button
           @click="addAIPersona"
           :disabled="aiPersonaCreating"

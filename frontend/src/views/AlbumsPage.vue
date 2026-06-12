@@ -55,8 +55,11 @@
       </router-link>
     </div>
 
-    <div v-else class="rounded-lg border border-dashed border-[var(--border)] bg-[var(--surface-card)] p-10 text-center">
-      <p class="text-base text-[var(--text-muted)]">还没有相册</p>
+    <div v-else class="ui-empty">
+      <p class="text-base font-medium text-[var(--text)]">还没有相册</p>
+      <p class="mx-auto mt-2 max-w-sm text-sm leading-6 text-[var(--text-muted)]">
+        可以先创建一个“成长记录”或“日常照片”，之后从发布页或媒体库继续补充。
+      </p>
       <button
         @click="showCreate = true"
         class="album-action mt-5 rounded-lg bg-[var(--text)] px-5 py-2.5 text-sm font-medium text-[var(--surface)]"
@@ -76,30 +79,34 @@
     <div
       v-if="showCreate"
       @click="showCreate = false"
-      class="fixed inset-0 z-50 flex items-center justify-center px-4"
-      style="background:rgba(75,40,25,0.38);backdrop-filter:blur(6px)"
+      class="ui-modal-backdrop fixed inset-0 z-50 flex items-end justify-center overflow-y-auto px-3 py-4 sm:items-center sm:px-4"
     >
-      <div @click.stop class="modal-panel w-full max-w-md space-y-4 rounded-lg border border-[var(--border)] bg-[var(--surface-card)] p-6 shadow-[var(--shadow-panel)]">
-        <h2 class="text-xl font-semibold text-[var(--text)]">创建相册</h2>
-        <input
-          v-model="newAlbum.name"
-          placeholder="相册名称"
-          class="album-input w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--text)] outline-none"
-        />
-        <textarea
-          v-model="newAlbum.description"
-          placeholder="描述（可选）"
-          rows="3"
-          class="album-input w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--text)] outline-none"
-        />
-        <div class="flex gap-3">
-          <button @click="showCreate = false" class="flex-1 rounded-lg py-3 text-sm text-[var(--text-muted)]" type="button">
+      <div @click.stop class="modal-panel ui-modal-panel flex max-h-[calc(100dvh-2rem)] w-full max-w-md flex-col overflow-hidden">
+        <div class="border-b border-[var(--border)] px-5 py-4">
+          <h2 class="text-xl font-semibold text-[var(--text)]">创建相册</h2>
+          <p class="mt-1 text-sm text-[var(--text-muted)]">给一组家庭影像找个好归处。</p>
+        </div>
+        <div class="ui-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+          <input
+            v-model="newAlbum.name"
+            placeholder="相册名称"
+            class="album-input w-full rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--text)] outline-none"
+          />
+          <textarea
+            v-model="newAlbum.description"
+            placeholder="描述（可选）"
+            rows="3"
+            class="album-input w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--text)] outline-none"
+          />
+        </div>
+        <div class="grid grid-cols-2 gap-3 border-t border-[var(--border)] px-5 py-4">
+          <button @click="showCreate = false" class="rounded-lg py-3 text-sm text-[var(--text-muted)]" type="button">
             取消
           </button>
           <button
             @click="handleCreate"
             :disabled="!newAlbum.name.trim()"
-            class="album-action flex-1 rounded-lg bg-[var(--text)] py-3 text-sm font-medium text-[var(--surface)] disabled:opacity-30"
+            class="album-action rounded-lg bg-[var(--text)] py-3 text-sm font-medium text-[var(--surface)] disabled:opacity-30"
             type="button"
           >
             创建

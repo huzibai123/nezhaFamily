@@ -20,7 +20,7 @@
           </div>
           <button
             @click="loadAll"
-            class="soft-button inline-flex justify-center rounded-lg border border-[var(--border)] px-4 py-2.5 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)] hover:text-[var(--text)]"
+            class="soft-button inline-flex w-full justify-center rounded-lg border border-[var(--border)] px-4 py-2.5 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)] hover:text-[var(--text)] sm:w-auto"
             type="button"
           >
             刷新
@@ -32,7 +32,7 @@
     <div class="space-y-6">
       <p
         v-if="message"
-        class="rounded-lg border border-[var(--border-focus)] bg-[var(--accent-soft)] px-4 py-3 text-sm text-[var(--accent)]"
+        class="ui-feedback ui-feedback-success"
       >
         {{ message }}
       </p>
@@ -70,7 +70,7 @@
           </div>
           <RouterLink
             to="/admin/ai"
-            class="primary-button inline-flex items-center justify-center gap-2 rounded-lg bg-[var(--text)] px-4 py-2.5 text-sm font-medium text-[var(--surface)]"
+            class="primary-button inline-flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--text)] px-4 py-2.5 text-sm font-medium text-[var(--surface)] sm:w-auto"
           >
             进入 AI 配置
           </RouterLink>
@@ -210,25 +210,25 @@
                 <option value="admin">管理员</option>
               </select>
 
-              <div class="flex gap-2">
+              <div class="grid grid-cols-3 gap-2 xl:flex">
                 <button
                   @click="saveMember(member)"
                   :disabled="savingMemberId === member.id"
-                  class="primary-button flex-1 rounded-lg bg-[var(--text)] px-3 py-2 text-sm font-medium text-[var(--surface)] disabled:opacity-50"
+                  class="primary-button min-w-0 rounded-lg bg-[var(--text)] px-3 py-2 text-sm font-medium text-[var(--surface)] disabled:opacity-50 xl:flex-1"
                   type="button"
                 >
                   {{ savingMemberId === member.id ? '保存中' : '保存' }}
                 </button>
                 <button
                   @click="regenInvite(member)"
-                  class="soft-button rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)]"
+                  class="soft-button min-w-0 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)]"
                   type="button"
                 >
                   邀请
                 </button>
                 <button
                   @click="copyInvite(member)"
-                  class="soft-button rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)]"
+                  class="soft-button min-w-0 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)]"
                   type="button"
                 >
                   复制
@@ -311,7 +311,7 @@
             </div>
             <button
               @click="runBackup"
-              class="primary-button rounded-lg bg-[var(--text)] px-4 py-2 text-sm font-medium text-[var(--surface)] disabled:cursor-not-allowed disabled:opacity-60"
+              class="primary-button shrink-0 rounded-lg bg-[var(--text)] px-4 py-2 text-sm font-medium text-[var(--surface)] disabled:cursor-not-allowed disabled:opacity-60"
               type="button"
               :disabled="backupRunning"
             >

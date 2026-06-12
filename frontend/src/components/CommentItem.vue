@@ -196,9 +196,11 @@ function formatTime(timestamp: string): string {
 }
 
 .comment-item.is-highlighted > .comment-card {
-  animation: comment-highlight 2.4s ease-out both;
+  animation: comment-highlight 2.8s ease-out both;
   border-color: rgba(217, 77, 48, 0.42);
-  box-shadow: 0 0 0 3px rgba(217, 77, 48, 0.12), 0 16px 34px rgba(143, 80, 40, 0.16);
+  box-shadow:
+    0 0 0 4px rgba(217, 77, 48, 0.13),
+    0 16px 34px rgba(143, 80, 40, 0.16);
 }
 
 .reply-indicator {
@@ -336,6 +338,29 @@ function formatTime(timestamp: string): string {
   margin-top: 8px;
 }
 
+@media (max-width: 520px) {
+  .comment-card {
+    padding: 12px;
+  }
+
+  .comment-item.is-reply .comment-card {
+    margin-left: 24px !important;
+  }
+
+  .comment-body {
+    gap: 10px;
+  }
+
+  .avatar {
+    height: 30px;
+    width: 30px;
+  }
+
+  .comment-actions {
+    flex-wrap: wrap;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .comment-card,
   .action-btn {
@@ -355,11 +380,13 @@ function formatTime(timestamp: string): string {
 @keyframes comment-highlight {
   0% {
     background: rgba(217, 77, 48, 0.18);
+    transform: translateY(-2px);
   }
   100% {
     background:
       linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(255, 238, 211, 0.08)),
       rgba(255, 248, 235, 0.48);
+    transform: translateY(0);
   }
 }
 </style>

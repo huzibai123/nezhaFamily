@@ -19,7 +19,7 @@
         <button
           @click="handlePublish"
           :disabled="!canPublish || isBusy"
-          class="primary-button inline-flex rounded-lg bg-[var(--text)] px-5 py-2.5 text-sm font-medium text-[var(--surface)] active:scale-[0.98] disabled:opacity-30"
+          class="primary-button inline-flex w-full items-center justify-center rounded-lg bg-[var(--text)] px-5 py-2.5 text-sm font-medium text-[var(--surface)] active:scale-[0.98] disabled:opacity-30 sm:w-auto"
           type="button"
         >
           {{ publishing ? '发布中...' : '发布' }}
@@ -27,7 +27,7 @@
       </div>
     </template>
 
-    <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
+    <div class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem] xl:gap-6">
       <section class="editor-panel rounded-lg border border-[var(--border)] bg-[var(--surface-card)] p-5 shadow-[var(--shadow-panel)]">
         <div class="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <label class="block text-sm font-semibold text-[var(--text)]" for="post-content">
@@ -65,7 +65,7 @@
             <span class="text-xs text-[var(--text-muted)]">{{ mediaFiles.length }}/9</span>
           </div>
 
-          <div v-if="previews.length" class="mb-4 grid grid-cols-3 gap-2">
+          <div v-if="previews.length" class="mb-4 grid grid-cols-3 gap-2 sm:grid-cols-4 xl:grid-cols-3">
             <div
               v-for="(preview, index) in previews"
               :key="preview"
@@ -113,7 +113,7 @@
             v-if="mediaFiles.length < 9"
             @click="triggerFileInput"
             :disabled="isBusy"
-            class="upload-dropzone grid w-full place-items-center rounded-lg border border-dashed border-[var(--border)] px-4 py-12 text-center text-sm text-[var(--text-muted)] hover:border-[var(--border-focus)] hover:bg-[var(--surface-elevated)] hover:text-[var(--text-secondary)] disabled:opacity-45"
+            class="upload-dropzone grid w-full place-items-center rounded-lg border border-dashed border-[var(--border)] px-4 py-10 text-center text-sm text-[var(--text-muted)] hover:border-[var(--border-focus)] hover:bg-[var(--surface-elevated)] hover:text-[var(--text-secondary)] disabled:opacity-45 sm:py-12"
             type="button"
           >
             添加图片或视频
@@ -147,10 +147,10 @@
           :sections="publishChecklist"
         />
 
-        <p v-if="errorMessage" class="rounded-lg border border-[color:rgb(227_107_93_/_0.24)] bg-[var(--accent-soft)] p-3 text-xs text-[var(--accent)]">
+        <p v-if="errorMessage" class="ui-feedback ui-feedback-error">
           {{ errorMessage }}
         </p>
-        <p v-else-if="statusMessage" class="rounded-lg border border-[color:rgb(45_108_104_/_0.22)] bg-[color:rgb(45_108_104_/_0.08)] p-3 text-xs text-[color:rgb(45_108_104)]">
+        <p v-else-if="statusMessage" class="ui-feedback ui-feedback-success">
           {{ statusMessage }}
         </p>
       </aside>

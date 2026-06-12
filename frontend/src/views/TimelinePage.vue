@@ -112,6 +112,17 @@
           class="memory-filter rounded-xl border p-4"
           style="background:var(--surface-panel);border-color:var(--border)"
         >
+          <div class="mb-3 flex items-center justify-between gap-3">
+            <p class="text-sm font-semibold text-[var(--text)]">筛选记忆</p>
+            <button
+              @click="resetFilters"
+              :disabled="!hasActiveFilters"
+              class="soft-button rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--text-secondary)] disabled:opacity-40"
+              type="button"
+            >
+              清空筛选
+            </button>
+          </div>
           <div class="grid gap-3 sm:grid-cols-2">
             <input
               v-model="searchKeyword"
@@ -147,8 +158,8 @@
               aria-label="结束日期"
             />
           </div>
-          <p class="mt-3 text-xs text-[var(--text-muted)]">
-            当前显示 {{ posts.length }} / {{ totalPostCount }} 条记忆。
+          <p class="mt-3 text-xs leading-5 text-[var(--text-muted)]">
+            {{ filterSummary }} · 当前显示 {{ posts.length }} / {{ totalPostCount }} 条记忆。
           </p>
         </section>
 
@@ -177,13 +188,23 @@
               <p class="mt-3 text-sm leading-6" style="color:var(--text-secondary)">
                 可以清空关键词，或换一个成员、媒体类型继续找。
               </p>
-              <router-link
-                to="/publish"
-                class="primary-button mt-6 inline-flex items-center justify-center rounded-lg px-4 py-2.5 text-sm font-medium active:scale-[0.98]"
-                style="background:var(--text);color:var(--surface)"
-              >
-                发布新记忆
-              </router-link>
+              <div class="mt-6 flex flex-wrap gap-2">
+                <button
+                  v-if="hasActiveFilters"
+                  @click="resetFilters"
+                  class="soft-button inline-flex items-center justify-center rounded-lg border border-[var(--border)] px-4 py-2.5 text-sm text-[var(--text-secondary)]"
+                  type="button"
+                >
+                  清空筛选
+                </button>
+                <router-link
+                  to="/publish"
+                  class="primary-button inline-flex items-center justify-center rounded-lg px-4 py-2.5 text-sm font-medium active:scale-[0.98]"
+                  style="background:var(--text);color:var(--surface)"
+                >
+                  发布新记忆
+                </router-link>
+              </div>
             </div>
             <div class="grid grid-cols-2 gap-3">
               <div class="memory-tile h-24 rounded-xl border" style="border-color:var(--border)" />
@@ -328,6 +349,11 @@
                 看一眼
               </router-link>
             </section>
+            <section class="mt-7 rounded-xl border border-[var(--border)] bg-[var(--surface-panel)] p-4">
+              <p class="text-xs font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">Current</p>
+              <h3 class="mt-2 text-base font-semibold text-[var(--text)]">当前筛选</h3>
+              <p class="mt-2 text-sm leading-6 text-[var(--text-secondary)]">{{ filterSummary }}</p>
+            </section>
 
             <section class="mt-7">
               <p class="text-xs font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">Members</p>
@@ -397,6 +423,14 @@
               <p class="mt-3 text-sm leading-6 text-[var(--text-secondary)]">
                 可以清空筛选，或换一个成员、媒体类型继续找。
               </p>
+              <button
+                v-if="hasActiveFilters"
+                @click="resetFilters"
+                class="soft-button mt-5 rounded-lg border border-[var(--border)] px-4 py-2 text-sm text-[var(--text-secondary)]"
+                type="button"
+              >
+                清空筛选
+              </button>
             </section>
 
             <div v-else class="grid gap-4 2xl:grid-cols-2">
@@ -583,6 +617,32 @@ const groupedPosts = computed<PostGroup[]>(() => {
 const pageSize = computed(() => isDesktop.value ? desktopPageSize : mobilePageSize)
 const totalPages = computed(() => Math.max(1, Math.ceil(totalPostCount.value / pageSize.value)))
 const pagedPosts = computed(() => posts.value)
+const hasActiveFilters = computed(() =>
+  Boolean(
+    searchKeyword.value.trim()
+    || debouncedSearchKeyword.value
+    || selectedAuthorId.value
+    || mediaFilter.value !== 'all'
+    || dateFrom.value
+    || dateTo.value
+  )
+)
+const filterSummary = computed(() => {
+  const parts: string[] = []
+  if (debouncedSearchKeyword.value || searchKeyword.value.trim()) {
+    parts.push(`关键词「${debouncedSearchKeyword.value || searchKeyword.value.trim()}」`)
+  }
+  const member = memberOptions.value.find((item) => item.id === selectedAuthorId.value)
+  if (member) parts.push(`成员「${member.name}」`)
+  if (mediaFilter.value !== 'all') {
+    const labels = { image: '照片', video: '视频', text: '纯文字' }
+    parts.push(labels[mediaFilter.value])
+  }
+  if (dateFrom.value || dateTo.value) {
+    parts.push(`${dateFrom.value || '不限'} 至 ${dateTo.value || '不限'}`)
+  }
+  return parts.length ? parts.join(' · ') : '未设置筛选'
+})
 
 watch(searchKeyword, () => {
   if (searchDebounceTimer) {

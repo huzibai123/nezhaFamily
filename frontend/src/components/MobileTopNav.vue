@@ -48,15 +48,14 @@ const navItems = computed(() => [
     </div>
 
     <nav
-      class="grid border-t border-[var(--border)]"
-      :style="{ gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))` }"
+      class="mobile-nav-scroll flex overflow-x-auto border-t border-[var(--border)] px-2"
       aria-label="移动端主导航"
     >
       <RouterLink
         v-for="item in navItems"
         :key="item.to"
         :to="item.to"
-        class="mobile-nav-link flex h-12 min-w-0 flex-col items-center justify-center gap-0.5 text-[11px] font-medium text-[var(--text-muted)] hover:bg-[var(--surface-elevated)] hover:text-[var(--text-secondary)]"
+        class="mobile-nav-link flex h-12 min-w-[3.8rem] flex-1 flex-col items-center justify-center gap-0.5 rounded-t-lg px-2 text-[11px] font-medium text-[var(--text-muted)] hover:bg-[var(--surface-elevated)] hover:text-[var(--text-secondary)]"
         active-class="mobile-nav-link-active !text-[var(--accent)]"
       >
         <component :is="item.icon" :size="17" stroke-width="1.9" aria-hidden="true" />
@@ -96,6 +95,14 @@ const navItems = computed(() => [
 
 .mobile-nav-link {
   position: relative;
+}
+
+.mobile-nav-scroll {
+  scrollbar-width: none;
+}
+
+.mobile-nav-scroll::-webkit-scrollbar {
+  display: none;
 }
 
 .mobile-nav-link::after {

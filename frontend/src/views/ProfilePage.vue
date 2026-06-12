@@ -13,7 +13,7 @@
     <div v-if="profile" class="space-y-6">
       <p
         v-if="errorMessage"
-        class="rounded-lg border border-[color:rgb(227_107_93_/_0.24)] bg-[var(--accent-soft)] px-4 py-3 text-sm text-[var(--accent)]"
+        class="ui-feedback ui-feedback-error"
       >
         {{ errorMessage }}
       </p>
@@ -108,12 +108,11 @@
     <div
       v-if="showEdit"
       @click.self="closeEditModal"
-      class="fixed inset-0 z-50 overflow-y-auto px-4 py-6 sm:py-10"
-      style="background:rgba(75,40,25,0.38);backdrop-filter:blur(6px)"
+      class="ui-modal-backdrop fixed inset-0 z-50 overflow-y-auto px-3 py-4 sm:px-4 sm:py-8"
     >
-      <div class="flex min-h-full items-start justify-center">
-        <div @click.stop class="modal-panel flex max-h-[calc(100dvh-3rem)] w-full max-w-lg flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--surface-card)] shadow-[var(--shadow-panel)]">
-          <div class="flex items-center justify-between border-b border-[var(--border)] px-5 py-4 sm:px-6">
+      <div class="flex min-h-full items-center justify-center">
+        <div @click.stop class="modal-panel ui-modal-panel flex max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col overflow-hidden">
+          <div class="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-4 py-3 sm:px-6 sm:py-4">
             <h2 class="text-lg font-semibold text-[var(--text)]">编辑个人资料</h2>
             <button
               @click="closeEditModal"
@@ -126,10 +125,10 @@
             </button>
           </div>
 
-          <div class="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4 sm:px-6">
-            <div class="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-4">
-              <div class="flex items-center gap-4">
-                <div class="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-xl bg-[var(--accent-soft)] text-2xl font-semibold text-[var(--accent)]">
+          <div class="ui-scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto px-4 py-3 sm:space-y-4 sm:px-6 sm:py-4">
+            <div class="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3 sm:p-4">
+              <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <div class="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-xl bg-[var(--accent-soft)] text-xl font-semibold text-[var(--accent)] sm:h-16 sm:w-16 sm:text-2xl">
                   <img
                     v-if="editAvatarPreview"
                     :src="editAvatarPreview"
@@ -141,11 +140,11 @@
                 <div class="min-w-0 flex-1">
                   <p class="text-sm font-medium text-[var(--text)]">头像</p>
                   <p class="mt-1 text-xs text-[var(--text-muted)]">支持 JPG、PNG、WebP、GIF 图片。</p>
-                  <div class="mt-3 flex flex-wrap gap-2">
+                  <div class="mt-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
                     <button
                       @click="avatarInput?.click()"
                       :disabled="saving || avatarUploading"
-                      class="soft-button inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)] disabled:opacity-40"
+                      class="soft-button inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)] disabled:opacity-40"
                       type="button"
                     >
                       <Camera :size="15" stroke-width="2" aria-hidden="true" />
@@ -155,7 +154,7 @@
                       v-if="editForm.avatar_url"
                       @click="removeAvatar"
                       :disabled="saving || avatarUploading"
-                      class="soft-button inline-flex items-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)] disabled:opacity-40"
+                      class="soft-button inline-flex items-center justify-center gap-2 rounded-lg border border-[var(--border)] px-3 py-2 text-sm text-[var(--text-secondary)] disabled:opacity-40"
                       type="button"
                     >
                       <Trash2 :size="15" stroke-width="2" aria-hidden="true" />
@@ -178,7 +177,7 @@
               <textarea
                 v-model="editForm.bio"
                 placeholder="介绍一下自己..."
-                rows="4"
+                rows="3"
                 class="profile-input w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--text)] outline-none"
               />
             </div>
@@ -200,7 +199,7 @@
             </div>
           </div>
 
-          <div class="flex flex-col-reverse gap-3 border-t border-[var(--border)] bg-[var(--surface-card)] px-5 py-4 sm:flex-row sm:px-6">
+          <div class="sticky bottom-0 flex shrink-0 flex-col-reverse gap-3 border-t border-[var(--border)] bg-[var(--surface-card)] px-4 py-3 sm:flex-row sm:px-6 sm:py-4">
             <button @click="closeEditModal" :disabled="saving || avatarUploading" class="flex-1 rounded-lg py-3 text-sm text-[var(--text-muted)] disabled:opacity-40" type="button">
               取消
             </button>
@@ -210,7 +209,7 @@
               class="primary-button flex-1 rounded-lg bg-[var(--text)] py-3 text-sm font-medium text-[var(--surface)] disabled:opacity-30"
               type="button"
             >
-              {{ saving ? '保存中...' : '保存' }}
+              {{ saving ? '保存中...' : '保存资料' }}
             </button>
           </div>
         </div>

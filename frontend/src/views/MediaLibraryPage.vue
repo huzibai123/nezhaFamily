@@ -599,7 +599,7 @@ function getErrorMessage(error: unknown, fallback: string) {
 
       <section
         v-if="hasSelection"
-        class="bulk-bar sticky top-[7.25rem] z-20 rounded-lg border border-[var(--border-focus)] bg-[var(--surface-card)] p-3 shadow-[var(--shadow-panel)]"
+        class="bulk-bar sticky bottom-3 z-20 rounded-lg border border-[var(--border-focus)] bg-[var(--surface-card)] p-3 shadow-[var(--shadow-panel)] lg:top-[7.25rem] lg:bottom-auto"
       >
         <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div class="flex flex-wrap items-center gap-2 text-sm text-[var(--text-secondary)]">
@@ -638,10 +638,10 @@ function getErrorMessage(error: unknown, fallback: string) {
         </div>
       </section>
 
-      <p v-if="errorMessage" class="rounded-lg border border-[color:rgb(227_107_93_/_0.24)] bg-[var(--accent-soft)] p-3 text-sm text-[var(--accent)]">
+      <p v-if="errorMessage" class="ui-feedback ui-feedback-error">
         {{ errorMessage }}
       </p>
-      <p v-else-if="statusMessage" class="rounded-lg border border-[color:rgb(45_108_104_/_0.22)] bg-[color:rgb(45_108_104_/_0.08)] p-3 text-sm text-[color:rgb(45_108_104)]">
+      <p v-else-if="statusMessage" class="ui-feedback ui-feedback-success">
         {{ statusMessage }}
       </p>
 
@@ -742,7 +742,7 @@ function getErrorMessage(error: unknown, fallback: string) {
                 </p>
               </div>
 
-              <div class="tile-actions absolute right-2 top-10 flex flex-col gap-1.5 opacity-0 group-hover:opacity-100">
+              <div class="tile-actions absolute right-2 top-10 flex flex-col gap-1.5 opacity-100 lg:opacity-0 lg:group-hover:opacity-100">
                 <button
                   class="tile-action"
                   type="button"
@@ -779,7 +779,7 @@ function getErrorMessage(error: unknown, fallback: string) {
         </button>
       </div>
 
-      <div v-else class="empty-state rounded-lg border border-dashed border-[var(--border)] bg-[var(--surface-card)] p-10 text-center">
+      <div v-else class="ui-empty">
         <p class="text-base font-medium text-[var(--text)]">{{ filters.trashOnly ? '回收站是空的' : '没有找到媒体' }}</p>
         <p class="mt-2 text-sm text-[var(--text-muted)]">
           {{ filters.trashOnly ? '被恢复或未删除的媒体会回到普通媒体库。' : '换个筛选条件，或发布新的家庭照片。' }}

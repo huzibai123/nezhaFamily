@@ -22,6 +22,8 @@
   --accent-leaf: #2d6c68;
   --accent-ink: #425184;
   --shadow-panel: 0 18px 42px rgba(47, 39, 35, 0.1);
+  --shadow-card: 0 14px 34px rgba(47, 39, 35, 0.08);
+  --shadow-hover: 0 22px 54px rgba(47, 39, 35, 0.12);
   --radius: 10px;
   --section: 96px;
 }
@@ -98,6 +100,90 @@ video {
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
+}
+
+.ui-card {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(255, 238, 211, 0.08)),
+    var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-panel);
+}
+
+.ui-panel {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.24), rgba(45, 108, 104, 0.05)),
+    var(--surface-panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.ui-control {
+  min-height: 2.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease;
+}
+
+.ui-control:focus,
+.ui-control:focus-visible {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  outline: none;
+}
+
+.ui-feedback {
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  padding: 0.75rem 0.9rem;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+}
+
+.ui-feedback-error {
+  background: var(--accent-soft);
+  border-color: rgba(227, 107, 93, 0.24);
+  color: var(--accent);
+}
+
+.ui-feedback-success {
+  background: rgba(45, 108, 104, 0.08);
+  border-color: rgba(45, 108, 104, 0.22);
+  color: var(--accent-leaf);
+}
+
+.ui-empty {
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.24), rgba(45, 108, 104, 0.05)),
+    var(--surface-card);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  padding: clamp(1.25rem, 4vw, 2.5rem);
+  text-align: center;
+}
+
+.ui-modal-backdrop {
+  background: rgba(75, 40, 25, 0.38);
+  backdrop-filter: blur(6px);
+}
+
+.ui-modal-panel {
+  background: var(--surface-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-panel);
+}
+
+.ui-scrollbar {
+  scrollbar-gutter: stable;
 }
 
 @keyframes fade-up {

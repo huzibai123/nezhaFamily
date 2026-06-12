@@ -1,6 +1,6 @@
 <template>
   <section class="ai-panel rounded-xl border border-[var(--border)] bg-[var(--surface-card)] p-5 shadow-[var(--shadow-panel)] sm:p-6">
-    <div class="flex items-center justify-between gap-3 border-b border-[var(--border)] pb-4">
+    <div class="flex flex-col gap-3 border-b border-[var(--border)] pb-4 sm:flex-row sm:items-center sm:justify-between">
       <div>
         <p class="text-xs font-medium uppercase tracking-[0.18em] text-[var(--text-muted)]">Albums</p>
         <h2 class="mt-2 text-lg font-semibold text-[var(--text)]">相册建议</h2>
@@ -23,7 +23,7 @@
               {{ suggestion.status }} · {{ formatDate(suggestion.created_at) }}
             </p>
           </div>
-          <div v-if="suggestion.status === 'pending'" class="flex shrink-0 gap-2">
+          <div v-if="suggestion.status === 'pending'" class="grid shrink-0 grid-cols-2 gap-2 sm:flex">
             <button
               @click="reviewAlbumSuggestion(suggestion, 'approve')"
               class="primary-button rounded-lg bg-[var(--text)] px-3 py-1.5 text-xs font-medium text-[var(--surface)]"
