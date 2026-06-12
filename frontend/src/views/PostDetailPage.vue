@@ -21,6 +21,7 @@
           @click="handleDelete"
           class="soft-button inline-flex rounded-lg border border-[color:rgb(227_107_93_/_0.35)] px-3 py-2 text-sm text-[var(--accent)] hover:bg-[var(--accent-soft)]"
           type="button"
+          data-testid="delete-post"
         >
           删除这条记忆
         </button>
@@ -88,6 +89,7 @@
               class="detail-action inline-flex items-center gap-2 text-sm transition-opacity hover:opacity-80"
               :class="post.is_liked ? 'text-[var(--accent)]' : 'text-[var(--text-muted)]'"
               type="button"
+              data-testid="post-like"
             >
               <Heart class="h-4 w-4" :fill="post.is_liked ? 'currentColor' : 'none'" :stroke-width="1.9" />
               {{ post.like_count }}
@@ -135,11 +137,13 @@
               v-model="newComment"
               :placeholder="replyingTo ? '写回复...' : '写评论...'"
               class="comment-input min-h-24 w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--surface-card)] px-4 py-3 text-sm leading-6 text-[var(--text)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--border-focus)]"
+              data-testid="comment-input"
             />
             <button
               type="submit"
               :disabled="!newComment.trim()"
               class="primary-button inline-flex rounded-lg bg-[var(--text)] px-4 py-2.5 text-sm font-medium text-[var(--surface)] active:scale-[0.98] disabled:opacity-30"
+              data-testid="comment-submit"
             >
               发送
             </button>

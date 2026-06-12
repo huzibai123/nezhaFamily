@@ -1,176 +1,116 @@
-# 哪吒家庭 - 使用指南
+# 快速开始
 
-## 🚀 快速开始（5 分钟搞定）
+这份指南用于在本机或 Homelab 中快速跑起哪吒家庭。生产部署请以 [docker/DEPLOY.md](./docker/DEPLOY.md) 为准。
 
-### 1. 启动项目
-
-```bash
-cd nezha-family
-docker-compose up -d
-```
-
-等待 30 秒，所有服务启动完成。
-
-### 2. 访问应用
-
-打开浏览器访问：**http://localhost:3000**
-
-### 3. 初始化管理员并登录
+## 1. 启动开发栈
 
 ```bash
-docker exec -it nezha-backend-dev python init_admin.py
+git clone https://github.com/huzibai123/nezhaFamily.git
+cd nezhaFamily
+docker compose up -d
 ```
 
-按提示设置管理员用户名、邮箱和密码，然后用刚创建的账号登录。
-
-### 4. 开始使用
-
-- ✅ 发布第一条帖子
-- ✅ 上传照片/视频
-- ✅ 评论和点赞
-- ✅ 浏览时间线
-
----
-
-## 📱 功能演示
-
-### 发布帖子
-
-1. 点击右上角 **"+"** 或 **"发布"** 按钮
-2. 输入文字内容
-3. （可选）上传图片或视频
-4. 点击 **"发布"**
-
-### 评论互动
-
-1. 在帖子下方评论框输入内容
-2. 点击 **"发送"** 发表评论
-3. 点击评论可以进行回复
-
-### 点赞
-
-- 点击 ❤️ 图标即可点赞
-- 再次点击取消点赞
-
----
-
-## 🛠️ 常见问题
-
-### Q: 如何停止服务？
+等待服务健康后检查：
 
 ```bash
-docker-compose down
+docker compose ps
+curl -fsS http://localhost:8000/health
 ```
 
-### Q: 如何查看日志？
+访问入口：
+
+- 应用入口：http://localhost:8080
+- 直接 Vite 入口：http://localhost:3000
+- API 文档：http://localhost:8000/api/docs
+
+## 2. 创建管理员
 
 ```bash
-docker-compose logs -f
+docker compose exec backend python init_admin.py
 ```
 
-### Q: 如何重置数据库？
+按提示输入管理员用户名、邮箱和密码。管理员用于家庭管理、AI 管家配置、运行状态和备份入口。
+
+非交互初始化可使用：
 
 ```bash
-docker-compose down -v  # 删除所有数据
-docker-compose up -d    # 重新启动
+docker compose exec \
+  -e INITIAL_ADMIN_USERNAME=admin \
+  -e INITIAL_ADMIN_EMAIL=you@example.com \
+  -e INITIAL_ADMIN_PASSWORD='replace-with-a-strong-password' \
+  backend python create_admin.py
 ```
 
-### Q: 如何创建新用户？
+## 3. 邀请家人
 
-1. 管理员登录后，进入“家庭管理”
-2. 在成员卡片里生成或复制邀请码
-3. 新用户使用邀请码注册
+1. 用管理员账号登录。
+2. 进入“家庭管理”。
+3. 复制成员邀请码。
+4. 家人在注册页填写邀请码、用户名、邮箱和密码。
 
-### Q: 前端无法访问后端？
+## 4. 发布第一条记忆
 
-检查 CORS 配置：
+1. 进入“发布记忆”。
+2. 输入文字，或上传图片/视频。
+3. 可选择目标相册。
+4. 点击“发布”。
+
+AI 启用后，发布页会出现文案助手：
+
+- 有文案时：润色文案。
+- 无文案但有媒体时：帮我写文案。
+- 无文案且无媒体时：不可生成。
+
+## 5. 常用操作
 
 ```bash
-# 查看后端日志
-docker-compose logs backend | grep CORS
+# 查看日志
+docker compose logs -f backend
+docker compose logs -f celery-worker
+
+# 重启服务
+docker compose restart backend frontend celery-worker caddy
+
+# 停止服务
+docker compose down
+
+# 删除全部开发数据，谨慎使用
+docker compose down -v
 ```
 
----
+## 6. 可选 AI 配置
 
-## 🔧 配置修改
+AI 默认可以关闭，不影响核心家庭功能。需要使用 AI 文案、AI 评论/点赞时：
 
-### 修改端口
+1. 管理员进入“AI 管家”。
+2. 配置 OpenAI-compatible provider 的 `base_url`、模型名和 Key。
+3. 点击“保存并测试”。
+4. 在角色页调整自动评论、自动点赞、风格和频率。
 
-编辑 `docker-compose.yml`：
+后台保存的模型 Key 会加密存储。生产环境请设置长期稳定的 `AI_KEY_ENCRYPTION_SECRET`，见 [docker/DEPLOY.md](./docker/DEPLOY.md)。
 
-```yaml
-services:
-  frontend:
-    ports:
-      - "3000:3000"  # 改为你想要的端口
-  backend:
-    ports:
-      - "8000:8000"
-```
-
-### 修改数据库密码
-
-编辑 `.env` 文件：
-
-```env
-POSTGRES_PASSWORD=your_new_password
-```
-
-然后重启：
+## 7. 验证安装
 
 ```bash
-docker-compose down -v
-docker-compose up -d
+npm --prefix frontend run build
+docker compose run --rm --no-deps -v "$PWD:/workspace" -w /workspace/backend backend pytest -q
+npm --prefix frontend run test:e2e
 ```
 
----
-
-## 📊 系统状态检查
-
-### 检查所有服务
+如果要跑完整 E2E 写入流，先设置管理员账号环境变量：
 
 ```bash
-docker-compose ps
+E2E_BASE_URL=http://localhost:8080 \
+E2E_API_URL=http://localhost:8000 \
+E2E_ADMIN_USERNAME=admin \
+E2E_ADMIN_PASSWORD='your-password' \
+npm --prefix frontend run test:e2e
 ```
 
-应该看到 4 个服务都是 `Up` 状态：
-- nezha-frontend-dev
-- nezha-backend-dev
-- nezha-postgres-dev
-- nezha-redis-dev
+E2E 会创建带 `E2E-NEZHA-` 前缀的测试内容，并在结束时尽量清理。
 
-### 测试后端 API
+## 8. 下一步
 
-```bash
-curl http://localhost:8000/health
-```
-
-返回 `{"status":"healthy"}` 表示正常。
-
-### 测试前端
-
-```bash
-curl http://localhost:3000
-```
-
-返回 HTML 页面表示正常。
-
----
-
-## 🎉 完成！
-
-现在你已经成功部署了哪吒家庭！
-
-**下一步：**
-- 邀请家人注册
-- 开始分享美好时刻
-- 享受私有化的家庭空间
-
-**需要帮助？**
-- 查看 API 文档：http://localhost:8000/api/docs
-- 查看部署说明：`docker/DEPLOY.md`
-- 查看产品需求：`nezha-family.prd.md`
-
----
-
-*祝你使用愉快！💙*
+- 生产部署：[docker/DEPLOY.md](./docker/DEPLOY.md)
+- 测试说明：[TESTING.md](./TESTING.md)
+- 清理候选：[CLEANUP_CANDIDATES.md](./CLEANUP_CANDIDATES.md)

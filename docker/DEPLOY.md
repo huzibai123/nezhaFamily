@@ -13,13 +13,13 @@
 
 1. **克隆项目**
 ```bash
-git clone https://github.com/your-repo/nezha-family.git
-cd nezha-family
+git clone https://github.com/huzibai123/nezhaFamily.git
+cd nezhaFamily
 ```
 
 2. **启动服务**
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 3. **访问应用**
@@ -29,7 +29,7 @@ docker-compose up -d
 
 4. **查看日志**
 ```bash
-docker-compose logs -f
+docker compose logs -f
 ```
 
 ### 生产环境部署
@@ -58,7 +58,7 @@ AI 管家生产默认关闭：`AI_ENABLED=false`，`AI_API_KEY` 可以留空。�
 
 2. **启动生产环境**
 ```bash
-docker-compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d
 ```
 
 启动时会先运行 `migrate` 服务完成数据库迁移，后端和 Celery worker 会等待迁移成功后再启动。
@@ -130,40 +130,40 @@ docker exec \
 
 ```bash
 # 启动所有服务
-docker-compose up -d
+docker compose up -d
 
 # 停止所有服务
-docker-compose down
+docker compose down
 
 # 重启服务
-docker-compose restart
+docker compose restart
 
 # 停止并删除数据卷（⚠️ 会删除所有数据）
-docker-compose down -v
+docker compose down -v
 ```
 
 ### 查看日志
 
 ```bash
 # 查看所有服务日志
-docker-compose logs -f
+docker compose logs -f
 
 # 查看特定服务日志
-docker-compose logs -f backend
-docker-compose logs -f celery-worker
+docker compose logs -f backend
+docker compose logs -f celery-worker
 ```
 
 ### 服务管理
 
 ```bash
 # 查看服务状态
-docker-compose ps
+docker compose ps
 
 # 重启特定服务
-docker-compose restart backend
+docker compose restart backend
 
 # 重新构建并启动
-docker-compose up -d --build
+docker compose up -d --build
 ```
 
 ### 数据库操作
@@ -217,6 +217,38 @@ docker exec nezha-backend celery -A app.tasks call app.tasks.media_processing.cl
 
 生产环境如需定时执行，可后续接 Celery Beat 或宿主机 cron。在启用周期任务前，建议先确认备份策略和软删除入口已经就绪。
 
+## 发布验收 Checklist
+
+部署前建议先在本地或临时环境跑一遍：
+
+```bash
+docker compose config
+POSTGRES_PASSWORD=change-me-postgres \
+REDIS_PASSWORD=change-me-redis \
+SECRET_KEY=change-me-secret-key-32-bytes-min \
+AI_KEY_ENCRYPTION_SECRET=change-me-ai-key-encryption-secret \
+ALLOWED_ORIGINS=https://family.example.com \
+DOMAIN=family.example.com \
+ADMIN_EMAIL=admin@example.com \
+TRUSTED_PROXY_COUNT=1 \
+AI_ENABLED=false \
+docker compose -f docker-compose.prod.yml config
+
+docker compose run --rm --no-deps -v "$PWD:/workspace" -w /workspace/backend backend pytest -q
+npm --prefix frontend run build
+npm --prefix frontend run test:e2e
+```
+
+若要跑完整 E2E 写入流，先启动 dev stack 并设置管理员账号：
+
+```bash
+E2E_BASE_URL=http://localhost:8080 \
+E2E_API_URL=http://localhost:8000 \
+E2E_ADMIN_USERNAME=admin \
+E2E_ADMIN_PASSWORD='your-password' \
+npm --prefix frontend run test:e2e
+```
+
 ## 故障排查
 
 ### 服务无法启动
@@ -236,7 +268,7 @@ curl -fsS http://localhost:8080/health || curl -fsS http://localhost:8080/
 
 2. **查看服务日志**
 ```bash
-docker-compose logs backend
+docker compose logs backend
 ```
 
 3. **检查配置文件**
@@ -306,12 +338,12 @@ docker compose -f /tmp/nezha-compose-prod-smoke.yml down
 
 1. **检查数据库是否健康**
 ```bash
-docker-compose ps postgres
+docker compose ps postgres
 ```
 
 2. **检查数据库日志**
 ```bash
-docker-compose logs postgres
+docker compose logs postgres
 ```
 
 3. **手动连接测试**
@@ -328,7 +360,7 @@ dig your-domain.com
 
 2. **查看 Caddy 日志**
 ```bash
-docker-compose logs caddy
+docker compose logs caddy
 ```
 
 3. **手动申请证书**
@@ -363,7 +395,7 @@ redis:
 ## 安全建议
 
 1. **使用强密码**：所有密码至少 16 位，包含大小写字母、数字、特殊字符
-2. **定期更新镜像**：`docker-compose pull && docker-compose up -d`
+2. **定期更新镜像**：`docker compose pull && docker compose up -d`
 3. **备份策略**：每日自动备份数据库和媒体文件
 4. **监控告警**：配置日志监控和异常告警
 5. **防火墙规则**：只开放 80/443 端口，其他端口禁止外部访问
@@ -375,24 +407,24 @@ redis:
 git pull origin main
 
 # 2. 重新构建镜像
-docker-compose -f docker-compose.prod.yml build
+docker compose -f docker-compose.prod.yml build
 
 # 3. 停止旧服务
-docker-compose -f docker-compose.prod.yml down
+docker compose -f docker-compose.prod.yml down
 
 # 4. 启动新服务
-docker-compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d
 ```
 
 ## 卸载
 
 ```bash
 # 停止并删除所有容器、网络、数据卷
-docker-compose down -v
+docker compose down -v
 
 # 删除镜像
 docker rmi $(docker images | grep nezha | awk '{print $3}')
 
 # 删除项目目录
-rm -rf nezha-family
+rm -rf nezhaFamily
 ```

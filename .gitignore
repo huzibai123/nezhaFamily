@@ -69,6 +69,10 @@ frontend/node_modules/
 frontend/dist/
 frontend/.nuxt/
 frontend/.output/
+frontend/playwright-report/
+frontend/test-results/
+playwright-report/
+test-results/
 
 # Docker
 *.pid
@@ -86,6 +90,7 @@ tests/test_e2e_playwright.py
 *.bak
 COMPLETION_REPORT.md
 DEVELOPMENT_COMPLETE.md
+BUG_SCAN_*.md
 SESSION_*.md
 TEST_SUCCESS.md
 

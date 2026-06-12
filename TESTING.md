@@ -1,236 +1,169 @@
-# 测试运行指南
+# 测试指南
 
-本文档说明如何在 Docker 安装完成后运行测试。
+本文档说明哪吒家庭的本地门禁、正式 E2E、部署配置校验和生产 smoke 建议。
 
 ## 前置条件
 
-✅ Docker Desktop 已安装并启动
-✅ 代码问题已修复（数据库配置统一、conftest.py 已创建、pytest 配置完成）
-
-## 快速开始（推荐方式）
-
-### 1. 启动 Docker Desktop
+- Docker Desktop 或 Docker Engine 已启动。
+- 已安装 Node.js，或使用仓库内 Docker/Vite 服务。
+- 首次运行前安装前端依赖：
 
 ```bash
-# 打开 Docker Desktop 应用
-open /Applications/Docker.app
-
-# 等待 Docker 守护进程启动（状态栏图标变为可用）
-# 或者通过命令检查：
-docker ps
+npm --prefix frontend install
+npx --prefix frontend playwright install chromium
 ```
 
-### 2. 启动数据库服务
+如果 Playwright 浏览器下载较慢，也可以使用本机已安装的 Chrome：
 
 ```bash
-cd /Users/baiyi/myCode/nezhaFamily
-
-# 仅启动 PostgreSQL 和 Redis（不启动后端和前端）
-docker-compose up -d postgres redis
-
-# 等待服务就绪（大约 5-10 秒）
-docker-compose ps
-
-# 创建测试数据库
-docker-compose exec postgres psql -U nezha_user -d nezha_family -c "CREATE DATABASE nezha_family_test;"
+E2E_BROWSER_CHANNEL=chrome npm --prefix frontend run test:e2e
 ```
 
-### 3. 在 Docker 容器内运行测试（推荐）
+## 后端测试
 
-**优势**：
-- 环境完全隔离（Python 3.11 + 所有依赖已安装）
-- 避免本地 Python 3.13 兼容性问题
-- 与生产环境一致
+推荐在 Docker 后端镜像中运行，避免本机 Python 版本差异：
 
 ```bash
-# 构建后端镜像
-docker-compose build backend
-
-# 运行所有认证测试
-docker-compose run --rm backend pytest tests/test_auth.py -v
-
-# 运行单个测试
-docker-compose run --rm backend pytest tests/test_auth.py::test_register_success -v
-
-# 运行所有测试（包括未来添加的测试）
-docker-compose run --rm backend pytest tests/ -v
+docker compose run --rm --no-deps \
+  -v "$PWD:/workspace" \
+  -w /workspace/backend \
+  backend pytest -q
 ```
 
-**预期输出**：
-```
-tests/test_auth.py::test_register_success PASSED                    [ 20%]
-tests/test_auth.py::test_login_success PASSED                       [ 40%]
-tests/test_auth.py::test_register_invalid_invite_code PASSED        [ 60%]
-tests/test_auth.py::test_login_wrong_password PASSED                [ 80%]
-tests/test_auth.py::test_get_current_user PASSED                    [100%]
-
-======================== 5 passed in 2.34s =========================
-```
-
----
-
-## 备选方式：本地 Python 环境测试
-
-如果你想在本地 Python 3.13 环境测试（不推荐，但可行）：
-
-### 1. 确保数据库服务运行
+运行单个文件：
 
 ```bash
-# Docker 方式（推荐）
-docker-compose up -d postgres redis
-docker-compose exec postgres psql -U nezha_user -d nezha_family -c "CREATE DATABASE nezha_family_test;"
-
-# 或本地安装方式
-brew install postgresql@16 redis
-brew services start postgresql@16 redis
-createdb nezha_family_test
+docker compose run --rm --no-deps \
+  -v "$PWD:/workspace" \
+  -w /workspace/backend \
+  backend pytest tests/test_auth.py -q
 ```
 
-### 2. 安装 Python 依赖
+## 前端构建与契约检查
 
 ```bash
-cd /Users/baiyi/myCode/nezhaFamily/backend
-
-# 创建虚拟环境（如果还没有）
-python3 -m venv venv
-source venv/bin/activate
-
-# 安装依赖（pillow 已升级到 10.4.0，应该能装了）
-pip install -r requirements.txt
-```
-
-### 3. 运行测试
-
-```bash
-# 确保虚拟环境已激活
-source venv/bin/activate
-
-# 运行测试
-pytest tests/test_auth.py -v
-```
-
----
-
-## 常见问题
-
-### Q1: 测试提示 "connection refused"
-
-**原因**：数据库服务未启动或配置不正确
-
-**解决**：
-```bash
-# 检查数据库服务状态
-docker-compose ps postgres
-
-# 如果未运行，启动服务
-docker-compose up -d postgres redis
-
-# 检查连接
-docker-compose exec postgres psql -U nezha_user -d nezha_family -c "\l"
-```
-
-### Q2: 测试提示 "database nezha_family_test does not exist"
-
-**原因**：测试数据库未创建
-
-**解决**：
-```bash
-docker-compose exec postgres psql -U nezha_user -d nezha_family -c "CREATE DATABASE nezha_family_test;"
-```
-
-### Q3: pytest 提示 "ModuleNotFoundError"
-
-**原因**：依赖未安装
-
-**解决**：
-```bash
-# Docker 方式：重新构建镜像
-docker-compose build backend
-
-# 本地方式：重新安装依赖
-pip install -r requirements.txt
-```
-
-### Q4: 测试卡住不动
-
-**原因**：asyncio event loop 配置问题
-
-**解决**：已在 `pyproject.toml` 中配置 `asyncio_mode = "auto"`，正常情况下不会出现此问题。如果仍然卡住，检查 pytest-asyncio 版本：
-```bash
-pip show pytest-asyncio
-# 应该是 0.23.4 或更高
-```
-
----
-
-## 已修复的问题清单
-
-在运行测试前，以下问题已被修复：
-
-1. ✅ **依赖兼容性**：`pillow` 升级到 10.4.0（兼容 Python 3.13）
-2. ✅ **数据库配置统一**：三处配置统一为 `nezha_user/nezha_dev_password`
-3. ✅ **测试基础设施**：创建 `tests/conftest.py`（包含 db、client、test_admin、test_user fixtures）
-4. ✅ **pytest 配置**：创建 `pyproject.toml`（设置 asyncio_mode）
-5. ✅ **测试用例修正**：修正邀请码和密码，添加更多测试场景
-
----
-
-## 下一步
-
-测试通过后，可以继续开发：
-
-1. **阶段 2**：实现帖子 API（posts.py）
-2. **阶段 3**：实现媒体上传（media.py）
-3. **阶段 4**：实现评论和点赞（comments.py, likes.py）
-4. **阶段 5**：完善前端 UI
-
-运行整个项目（前后端 + 数据库）：
-```bash
-docker-compose up -d
-# 访问：
-# - 前端：http://localhost:3000
-# - 后端 API 文档：http://localhost:8000/api/docs
-# - 数据库：localhost:5432
-```
-
-## 部署配置验收命令
-
-部署配置变更后，至少执行以下 dry-run 检查；生产命令使用一次性环境变量，避免把临时密钥写入 `.env`。
-
-```bash
-cd /Users/baiyi/myCode/nezhaFamily
-
-# 后端测试
-docker compose run --rm backend pytest -q
-
-# 前端构建
 npm --prefix frontend run build
+npm --prefix frontend run test:contracts
+```
 
-# 开发 Compose 配置
+`build` 会执行 `vue-tsc -b` 和 Vite 构建；`test:contracts` 用于锁定 AI 管理子路由和 Provider payload 语义。
+
+## 正式 E2E
+
+Playwright Test 位于 `frontend/e2e`，脚本为：
+
+```bash
+npm --prefix frontend run test:e2e
+```
+
+默认环境变量：
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `E2E_BASE_URL` | `http://localhost:3000` | 前端访问地址 |
+| `E2E_API_URL` | `http://localhost:8000` | 后端 API 地址 |
+| `E2E_ADMIN_USERNAME` | 空 | 管理员用户名 |
+| `E2E_ADMIN_PASSWORD` | 空 | 管理员密码 |
+| `E2E_BROWSER_CHANNEL` | 空 | 可选，例如 `chrome`，用于复用本机浏览器 |
+
+未设置管理员账号时，E2E 只运行公开登录页渲染，并明确跳过登录写入流；不会创建或重置真实管理员账号。
+
+使用现有 dev stack 跑完整流程：
+
+```bash
+E2E_BASE_URL=http://localhost:8080 \
+E2E_API_URL=http://localhost:8000 \
+E2E_ADMIN_USERNAME=admin \
+E2E_ADMIN_PASSWORD='your-password' \
+npm --prefix frontend run test:e2e
+```
+
+完整 E2E 会覆盖登录、发布文字帖、帖子详情、点赞、评论、通知页、相册、媒体库、资料弹窗和 AI 管家只读渲染。测试内容统一使用 `E2E-NEZHA-` 前缀，并在结束时尽量通过 API 删除；如果清理失败，输出需要人工清理的帖子 ID。
+
+## Docker Compose 校验
+
+开发配置：
+
+```bash
 docker compose config
+```
 
-# 生产 Compose 配置
+生产配置 dry-run，不需要写入 `.env`：
+
+```bash
 POSTGRES_PASSWORD=change-me-postgres \
 REDIS_PASSWORD=change-me-redis \
 SECRET_KEY=change-me-secret-key-32-bytes-min \
+AI_KEY_ENCRYPTION_SECRET=change-me-ai-key-secret-32-bytes-min \
 ALLOWED_ORIGINS=https://family.example.com \
 DOMAIN=family.example.com \
 ADMIN_EMAIL=admin@example.com \
 TRUSTED_PROXY_COUNT=1 \
 AI_ENABLED=false \
 docker compose -f docker-compose.prod.yml config
+```
 
-# Caddy 配置校验
-docker run --rm -v "$PWD/docker/Caddyfile.dev:/etc/caddy/Caddyfile:ro" caddy:2.7-alpine caddy validate --config /etc/caddy/Caddyfile
+## Caddy Validate
+
+开发 Caddyfile：
+
+```bash
+docker run --rm \
+  -v "$PWD/docker/Caddyfile.dev:/etc/caddy/Caddyfile:ro" \
+  caddy:2.7-alpine \
+  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+```
+
+生产 Caddyfile：
+
+```bash
 docker run --rm \
   -e DOMAIN=family.example.com \
   -e EMAIL=admin@example.com \
   -v "$PWD/docker/Caddyfile:/etc/caddy/Caddyfile:ro" \
-  caddy:2.7-alpine caddy validate --config /etc/caddy/Caddyfile
-
-# 可选 smoke test
-docker compose up -d
-curl -fsS http://localhost:8080/health || curl -fsS http://localhost:8080/
+  caddy:2.7-alpine \
+  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
 ```
 
-如果本机 `8080`/`8443` 已被占用，先用 `lsof -i :8080` 和 `lsof -i :8443` 定位占用；临时改 Compose 端口做验证时不要提交该端口改动。
+## Worker Smoke
+
+开发栈启动后：
+
+```bash
+docker compose exec celery-worker celery -A app.tasks inspect ping
+```
+
+如果返回当前 worker 的 `pong`，说明 Redis broker、worker 导入和 Celery app 配置可用。
+
+## 备份校验
+
+管理后台可创建备份并执行校验。生产演练建议：
+
+1. 创建一次备份。
+2. 点击“校验备份”，确认 manifest、数据库快照和媒体归档均可读取。
+3. 下载备份到可信位置。
+4. 在临时 compose project 或新目录中做恢复演练。
+
+不要直接覆盖正在使用的生产卷。恢复细节见 [docker/DEPLOY.md](./docker/DEPLOY.md)。
+
+## AI Key 迁移验证
+
+如果实例曾用旧版本保存过 AI Provider Key：
+
+1. 部署新代码时保持旧 `SECRET_KEY` 不变。
+2. 设置长期稳定的 `AI_KEY_ENCRYPTION_SECRET`。
+3. 登录后台重新保存 Provider 配置。
+4. 确认测试连接通过后，未来才考虑轮换 JWT `SECRET_KEY`。
+
+自动化测试不会连接真实模型；真实供应商 smoke 只做人工最小闭环。
+
+## 提交前建议门禁
+
+```bash
+docker compose run --rm --no-deps -v "$PWD:/workspace" -w /workspace/backend backend pytest -q
+npm --prefix frontend run build
+npm --prefix frontend run test:e2e
+docker compose config
+POSTGRES_PASSWORD=change-me-postgres REDIS_PASSWORD=change-me-redis SECRET_KEY=change-me-secret-key-32-bytes-min AI_KEY_ENCRYPTION_SECRET=change-me-ai-key-secret-32-bytes-min ALLOWED_ORIGINS=https://family.example.com DOMAIN=family.example.com ADMIN_EMAIL=admin@example.com TRUSTED_PROXY_COUNT=1 AI_ENABLED=false docker compose -f docker-compose.prod.yml config
+git diff --check
+```

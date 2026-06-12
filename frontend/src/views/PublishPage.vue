@@ -21,6 +21,7 @@
           :disabled="!canPublish || isBusy"
           class="primary-button inline-flex w-full items-center justify-center rounded-lg bg-[var(--text)] px-5 py-2.5 text-sm font-medium text-[var(--surface)] active:scale-[0.98] disabled:opacity-30 sm:w-auto"
           type="button"
+          data-testid="publish-submit"
         >
           {{ publishing ? '发布中...' : '发布' }}
         </button>
@@ -51,6 +52,7 @@
           rows="12"
           :disabled="isBusy"
           class="editor-input min-h-[18rem] w-full resize-none rounded-lg border border-[var(--border)] bg-[var(--surface)] px-4 py-4 text-base leading-7 text-[var(--text)] outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--border-focus)] disabled:cursor-not-allowed disabled:opacity-60"
+          data-testid="publish-content"
         />
 
         <p class="mt-3 text-xs leading-5 text-[var(--text-muted)]">

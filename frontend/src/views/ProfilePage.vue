@@ -43,6 +43,7 @@
             @click="openEditModal"
             class="soft-button inline-flex rounded-lg border border-[var(--border)] px-4 py-2 text-sm text-[var(--text-secondary)] hover:bg-[var(--surface-elevated)] hover:text-[var(--text)]"
             type="button"
+            data-testid="profile-edit"
           >
             编辑资料
           </button>
