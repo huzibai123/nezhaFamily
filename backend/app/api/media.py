@@ -106,6 +106,16 @@ def _detect_mime_from_bytes(content: bytes) -> str | None:
     return None
 
 
+def _safe_original_filename(filename: str | None) -> str | None:
+    """仅保留上传展示名，不让路径片段或超长文件名进入数据库。"""
+    if not filename:
+        return None
+    safe_name = Path(filename).name.strip()
+    if not safe_name:
+        return None
+    return safe_name[:255]
+
+
 def _normalize_page(page: int, page_size: int) -> tuple[int, int]:
     if page < 1:
         page = 1
@@ -324,7 +334,8 @@ async def store_uploaded_media_files(
 
     try:
         for file in files:
-            file_ext = Path(file.filename or "").suffix.lower()
+            original_name = _safe_original_filename(file.filename)
+            file_ext = Path(original_name or "").suffix.lower()
             if file_ext not in allowed_exts:
                 raise HTTPException(
                     status_code=400, detail=f"不支持的文件类型: {file_ext}"
@@ -354,7 +365,7 @@ async def store_uploaded_media_files(
             media = MediaFile(
                 file_path=original_url,
                 file_type=media_type,
-                original_name=file.filename,
+                original_name=original_name,
                 mime_type=detected_mime,
                 file_size=file_size,
                 uploader_id=current_user.id,

@@ -5,14 +5,14 @@ from datetime import date, datetime, time, timezone
 from typing import Literal, Optional
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import desc, func, or_, select
+from sqlalchemy import desc, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.models.user import User
 from app.models.post import Post
-from app.models.comment import Comment
-from app.models.like import Like
+from app.models.like import PostLike
+from app.models.notification import Notification
 from app.schemas.post import (
     EMPTY_POST_MESSAGE,
     MediaItem,
@@ -202,18 +202,17 @@ async def get_posts(
     if post_ids:
         # 点赞数
         likes_count_query = (
-            select(Like.target_id, func.count(Like.id).label('count'))
-            .where(Like.target_type == 'post', Like.target_id.in_(post_ids))
-            .group_by(Like.target_id)
+            select(PostLike.post_id, func.count(PostLike.id).label('count'))
+            .where(PostLike.post_id.in_(post_ids))
+            .group_by(PostLike.post_id)
         )
         likes_count_result = await db.execute(likes_count_query)
-        likes_count = {row.target_id: row.count for row in likes_count_result}
+        likes_count = {row.post_id: row.count for row in likes_count_result}
 
         # 当前用户是否点赞
-        user_likes_query = select(Like.target_id).where(
-            Like.user_id == current_user.id,
-            Like.target_type == 'post',
-            Like.target_id.in_(post_ids)
+        user_likes_query = select(PostLike.post_id).where(
+            PostLike.user_id == current_user.id,
+            PostLike.post_id.in_(post_ids)
         )
         user_likes_result = await db.execute(user_likes_query)
         user_likes = set(user_likes_result.scalars().all())
@@ -275,18 +274,16 @@ async def get_post(
         raise HTTPException(status_code=404, detail="作者不存在")
 
     # 查询点赞数
-    likes_count_query = select(func.count()).select_from(Like).where(
-        Like.target_type == 'post',
-        Like.target_id == post_id
+    likes_count_query = select(func.count()).select_from(PostLike).where(
+        PostLike.post_id == post_id
     )
     likes_count_result = await db.execute(likes_count_query)
     likes_count = likes_count_result.scalar() or 0
 
     # 查询当前用户是否点赞
-    user_like_query = select(Like).where(
-        Like.user_id == current_user.id,
-        Like.target_type == 'post',
-        Like.target_id == post_id
+    user_like_query = select(PostLike).where(
+        PostLike.user_id == current_user.id,
+        PostLike.post_id == post_id
     )
     user_like_result = await db.execute(user_like_query)
     is_liked = user_like_result.scalar_one_or_none() is not None
@@ -350,17 +347,15 @@ async def update_post(
     await db.refresh(post)
 
     # 查询点赞信息
-    likes_count_query = select(func.count()).select_from(Like).where(
-        Like.target_type == 'post',
-        Like.target_id == post_id
+    likes_count_query = select(func.count()).select_from(PostLike).where(
+        PostLike.post_id == post_id
     )
     likes_count_result = await db.execute(likes_count_query)
     likes_count = likes_count_result.scalar() or 0
 
-    user_like_query = select(Like).where(
-        Like.user_id == current_user.id,
-        Like.target_type == 'post',
-        Like.target_id == post_id
+    user_like_query = select(PostLike).where(
+        PostLike.user_id == current_user.id,
+        PostLike.post_id == post_id
     )
     user_like_result = await db.execute(user_like_query)
     is_liked = user_like_result.scalar_one_or_none() is not None
@@ -401,22 +396,16 @@ async def delete_post(
     if post.author_id != current_user.id and current_user.role != 'admin':
         raise HTTPException(status_code=403, detail="无权删除此帖子")
 
-    # 手动删除关联的点赞记录（Like.target_id 没有外键约束，cascade 不会触发）
-    from sqlalchemy import delete as sql_delete
-    comment_ids_query = select(Comment.id).where(Comment.post_id == post_id)
     await db.execute(
-        sql_delete(Like).where(
-            Like.target_type == 'comment',
-            Like.target_id.in_(comment_ids_query),
+        update(Notification)
+        .where(
+            or_(
+                Notification.post_id == post_id,
+                (Notification.target_type == "post") & (Notification.target_id == post_id),
+            )
         )
+        .values(target_deleted=True)
     )
-    await db.execute(
-        sql_delete(Like).where(
-            Like.target_id == post_id,
-            Like.target_type == 'post'
-        )
-    )
-
     await db.delete(post)
     await db.commit()
 

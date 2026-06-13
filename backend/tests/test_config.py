@@ -27,6 +27,7 @@ def clear_settings_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "ENVIRONMENT",
         "SECRET_KEY",
         "TRUSTED_PROXY_COUNT",
+        "ALLOWED_ORIGINS",
     ):
         monkeypatch.delenv(key, raising=False)
 
@@ -100,7 +101,8 @@ def test_settings_accepts_custom_secret_key_in_production(
         "\n".join(
             [
                 "ENVIRONMENT=production",
-                "SECRET_KEY=prod-secret-that-is-not-default",
+                "SECRET_KEY=prod-secret-that-is-not-default-123456",
+                "ALLOWED_ORIGINS=https://family.example.com",
             ]
         ),
         encoding="utf-8",
@@ -109,7 +111,35 @@ def test_settings_accepts_custom_secret_key_in_production(
     settings = Settings(_env_file=env_file)
 
     assert settings.ENVIRONMENT == "production"
-    assert settings.SECRET_KEY == "prod-secret-that-is-not-default"
+    assert settings.SECRET_KEY == "prod-secret-that-is-not-default-123456"
+
+
+def test_settings_rejects_short_secret_key_in_production(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    clear_settings_env(monkeypatch)
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "ENVIRONMENT=production\nSECRET_KEY=too-short\nALLOWED_ORIGINS=https://family.example.com",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValidationError, match="长度至少 32 字符"):
+        Settings(_env_file=env_file)
+
+
+def test_settings_rejects_wildcard_cors_in_production(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """生产环境禁止 ALLOWED_ORIGINS 包含通配符 *"""
+    clear_settings_env(monkeypatch)
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("SECRET_KEY", "prod-secret-that-is-not-default-123456")
+    monkeypatch.setenv("ALLOWED_ORIGINS", "*")
+
+    with pytest.raises(ValidationError, match="ALLOWED_ORIGINS 不能包含通配符"):
+        Settings()
 
 
 def test_env_example_documents_runtime_and_proxy_settings():
@@ -126,6 +156,10 @@ def test_env_example_documents_runtime_and_proxy_settings():
     assert "CELERY_AI_TASK_SOFT_TIME_LIMIT=150" in content
     assert "CELERY_MEDIA_CLEANUP_TASK_TIME_LIMIT=3600" in content
     assert "CELERY_MEDIA_CLEANUP_TASK_SOFT_TIME_LIMIT=3300" in content
+    assert "ACCESS_TOKEN_EXPIRE_MINUTES=60" in content
+    assert "DATABASE_POOL_SIZE=5" in content
+    assert "DATABASE_MAX_OVERFLOW=10" in content
+    assert "DATABASE_POOL_TIMEOUT=30" in content
 
 
 def test_compose_files_make_runtime_settings_explicit():
@@ -145,10 +179,14 @@ def test_compose_files_make_runtime_settings_explicit():
         assert "CELERY_WORKER_PREFETCH_MULTIPLIER" in content
         assert "CELERY_MEDIA_CLEANUP_TASK_TIME_LIMIT" in content
         assert "CELERY_MEDIA_CLEANUP_TASK_SOFT_TIME_LIMIT" in content
+        assert "DATABASE_POOL_SIZE" in content
+        assert "DATABASE_MAX_OVERFLOW" in content
+        assert "DATABASE_POOL_TIMEOUT" in content
 
     prod_content = (project_root / "docker-compose.prod.yml").read_text(encoding="utf-8")
     assert "ENVIRONMENT: production" in prod_content
     assert "TRUSTED_PROXY_COUNT: ${TRUSTED_PROXY_COUNT:-1}" in prod_content
+    assert "ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}" in prod_content
 
 
 def test_caddy_security_headers_are_configured():

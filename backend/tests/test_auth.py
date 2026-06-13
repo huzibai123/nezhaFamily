@@ -8,7 +8,7 @@ from httpx import AsyncClient
 from redis.exceptions import ConnectionError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import create_access_token
+from app.core.security import create_access_token, decode_access_token
 from app.models.user import User
 
 
@@ -33,6 +33,14 @@ class FakeRedis:
         self.values.pop(key, None)
         return 1
 
+    async def exists(self, key: str):
+        return 1 if key in self.values else 0
+
+    async def setex(self, key: str, seconds: int, value: str):
+        self.values[key] = int(value)
+        self.expirations[key] = seconds
+        return True
+
 
 class FailingRedis:
     async def get(self, key: str):
@@ -47,13 +55,21 @@ class FailingRedis:
     async def delete(self, key: str):
         raise ConnectionError("redis unavailable")
 
+    async def exists(self, key: str):
+        raise ConnectionError("redis unavailable")
+
+    async def setex(self, key: str, seconds: int, value: str):
+        raise ConnectionError("redis unavailable")
+
 
 @pytest.fixture(autouse=True)
 def fail_open_auth_redis(monkeypatch: pytest.MonkeyPatch):
     """认证接口默认不依赖真实 Redis，限流专项测试会单独替换为 FakeRedis。"""
     from app.api import auth as auth_api
+    from app.core import security as security_api
 
     monkeypatch.setattr(auth_api, "redis_client", FailingRedis())
+    monkeypatch.setattr(security_api, "redis_client", FailingRedis())
 
 
 @pytest.mark.asyncio
@@ -64,7 +80,7 @@ async def test_register_success(client: AsyncClient, test_admin: User):
         json={
             "username": "newuser",
             "email": "newuser@test.com",
-            "password": "password123",
+            "password": "FamilyPass123",
             "invite_code": "TEST_ADMIN_INVITE",
         },
     )
@@ -85,7 +101,7 @@ async def test_login_success(client: AsyncClient, test_admin: User):
         "/api/v1/login",
         json={
             "username": "testadmin",
-            "password": "admin123456",
+            "password": "AdminPass123",
         },
     )
 
@@ -103,13 +119,33 @@ async def test_register_invalid_invite_code(client: AsyncClient):
         json={
             "username": "baduser",
             "email": "bad@test.com",
-            "password": "password123",
+            "password": "FamilyPass123",
             "invite_code": "INVALID_CODE",
         },
     )
 
     assert response.status_code == 400
     assert "邀请码" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_register_rejects_weak_password(
+    client: AsyncClient,
+    test_admin: User,
+):
+    """注册密码必须满足统一强度策略。"""
+    response = await client.post(
+        "/api/v1/register",
+        json={
+            "username": "weakpassuser",
+            "email": "weakpass@test.com",
+            "password": "password",
+            "invite_code": test_admin.invite_code,
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["loc"][-1] == "password"
 
 
 @pytest.mark.asyncio
@@ -128,7 +164,7 @@ async def test_register_integrity_error_returns_400(
         json={
             "username": "invitecollision",
             "email": "invitecollision@test.com",
-            "password": "password123",
+            "password": "FamilyPass123",
             "invite_code": test_admin.invite_code,
         },
     )
@@ -148,7 +184,7 @@ async def test_register_duplicate_username_and_email_use_same_message(
         json={
             "username": test_admin.username,
             "email": "other-username-conflict@test.com",
-            "password": "password123",
+            "password": "FamilyPass123",
             "invite_code": test_admin.invite_code,
         },
     )
@@ -157,7 +193,7 @@ async def test_register_duplicate_username_and_email_use_same_message(
         json={
             "username": "other_email_conflict",
             "email": test_admin.email,
-            "password": "password123",
+            "password": "FamilyPass123",
             "invite_code": test_admin.invite_code,
         },
     )
@@ -260,6 +296,16 @@ def test_get_client_ip_only_trusts_x_forwarded_for_when_configured(
     assert auth_api.get_client_ip(request) == "203.0.113.10"
 
 
+def test_access_token_contains_session_claims(test_user: User):
+    token = create_access_token({"user_id": str(test_user.id)})
+    payload = decode_access_token(token)
+
+    assert payload["user_id"] == str(test_user.id)
+    assert payload["jti"]
+    assert payload["iat"]
+    assert payload["exp"]
+
+
 @pytest.mark.asyncio
 async def test_login_wrong_password(client: AsyncClient, test_admin: User):
     """测试错误密码登录失败"""
@@ -272,7 +318,7 @@ async def test_login_wrong_password(client: AsyncClient, test_admin: User):
     )
 
     assert response.status_code == 401
-    assert "密码错误" in response.json()["detail"]
+    assert "用户名或密码错误" in response.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -305,7 +351,7 @@ async def test_login_rate_limit_uses_shared_redis_counter(
         headers=headers,
         json={
             "username": "testadmin",
-            "password": "admin123456",
+            "password": "AdminPass123",
         },
     )
     assert locked_response.status_code == 429
@@ -327,7 +373,7 @@ async def test_login_does_not_500_when_redis_is_unavailable(
         "/api/v1/login",
         json={
             "username": "testadmin",
-            "password": "admin123456",
+            "password": "AdminPass123",
         },
     )
 
@@ -343,7 +389,7 @@ async def test_get_current_user(client: AsyncClient, test_user: User):
         "/api/v1/login",
         json={
             "username": "testuser",
-            "password": "user123456",
+            "password": "UserPass123",
         },
     )
     token = login_response.json()["access_token"]
@@ -359,6 +405,47 @@ async def test_get_current_user(client: AsyncClient, test_user: User):
     assert data["username"] == "testuser"
     assert data["email"] == "user@test.com"
     assert data["role"] == "member"
+
+
+@pytest.mark.asyncio
+async def test_logout_revokes_current_token(
+    client: AsyncClient,
+    test_user: User,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from app.core import security as security_api
+
+    fake_redis = FakeRedis()
+    monkeypatch.setattr(security_api, "redis_client", fake_redis)
+    token = create_access_token({"user_id": str(test_user.id)})
+    headers = {"Authorization": f"Bearer {token}"}
+
+    logout_response = await client.post("/api/v1/logout", headers=headers)
+    me_response = await client.get("/api/v1/me", headers=headers)
+
+    assert logout_response.status_code == 200
+    assert logout_response.json()["message"] == "登出成功"
+    assert me_response.status_code == 401
+    assert any(key.startswith("revoked_token:") for key in fake_redis.values)
+
+
+@pytest.mark.asyncio
+async def test_logout_returns_503_when_revocation_store_unavailable(
+    client: AsyncClient,
+    test_user: User,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    from app.core import security as security_api
+
+    token = create_access_token({"user_id": str(test_user.id)})
+    monkeypatch.setattr(security_api, "redis_client", FailingRedis())
+
+    response = await client.post(
+        "/api/v1/logout",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 503
 
 
 @pytest.mark.asyncio

@@ -54,6 +54,9 @@ services:
         container_name: nezha-migrate-dev
         environment:
             DATABASE_URL: postgresql+asyncpg://nezha_user:nezha_dev_password@postgres:5432/nezha_family
+            DATABASE_POOL_SIZE: 5
+            DATABASE_MAX_OVERFLOW: 10
+            DATABASE_POOL_TIMEOUT: 30
             SECRET_KEY: dev_secret_key_change_in_production
             ALGORITHM: HS256
             DEBUG: "true"
@@ -92,6 +95,9 @@ services:
         environment:
             # 数据库配置
             DATABASE_URL: postgresql+asyncpg://nezha_user:nezha_dev_password@postgres:5432/nezha_family
+            DATABASE_POOL_SIZE: 5
+            DATABASE_MAX_OVERFLOW: 10
+            DATABASE_POOL_TIMEOUT: 30
             # Redis 配置
             REDIS_URL: redis://:${REDIS_PASSWORD:-nezha_redis_password}@redis:6379/0
             # JWT 配置
@@ -161,6 +167,9 @@ services:
         container_name: nezha-celery-worker-dev
         environment:
             DATABASE_URL: postgresql+asyncpg://nezha_user:nezha_dev_password@postgres:5432/nezha_family
+            DATABASE_POOL_SIZE: 5
+            DATABASE_MAX_OVERFLOW: 10
+            DATABASE_POOL_TIMEOUT: 30
             REDIS_URL: redis://:${REDIS_PASSWORD:-nezha_redis_password}@redis:6379/0
             SECRET_KEY: dev_secret_key_change_in_production
             AI_KEY_ENCRYPTION_SECRET: ${AI_KEY_ENCRYPTION_SECRET:-dev_ai_key_encryption_secret}

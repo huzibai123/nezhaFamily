@@ -14,12 +14,13 @@ def validate_models():
     print("验证模型导入...")
 
     try:
-        from app.models import User, Post, Comment, Like, MediaFile
+        from app.models import User, Post, Comment, PostLike, CommentLike, MediaFile
         print("✓ 所有模型导入成功")
         print(f"  - User: {User.__tablename__}")
         print(f"  - Post: {Post.__tablename__}")
         print(f"  - Comment: {Comment.__tablename__}")
-        print(f"  - Like: {Like.__tablename__}")
+        print(f"  - PostLike: {PostLike.__tablename__}")
+        print(f"  - CommentLike: {CommentLike.__tablename__}")
         print(f"  - MediaFile: {MediaFile.__tablename__}")
         return True
     except ImportError as e:
@@ -42,7 +43,14 @@ def validate_base():
             print(f"  - {table}")
 
         # 验证期望的表都存在
-        expected_tables = {"users", "posts", "comments", "likes", "media_files"}
+        expected_tables = {
+            "users",
+            "posts",
+            "comments",
+            "post_likes",
+            "comment_likes",
+            "media_files",
+        }
         if expected_tables.issubset(tables):
             print("✓ 所有必需的表都已注册")
             return True

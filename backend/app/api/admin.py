@@ -28,7 +28,7 @@ from app.models.ai import AIProviderConfig
 from app.models.comment import Comment
 from app.models.event import Event
 from app.models.family_settings import FamilySettings
-from app.models.like import Like
+from app.models.like import CommentLike, PostLike
 from app.models.media import MediaFile
 from app.models.notification import Notification
 from app.models.post import Post
@@ -519,7 +519,8 @@ async def build_backup_payload(db: AsyncSession) -> dict:
         "users": await snapshot_table(db, User),
         "posts": await snapshot_table(db, Post),
         "comments": await snapshot_table(db, Comment),
-        "likes": await snapshot_table(db, Like),
+        "post_likes": await snapshot_table(db, PostLike),
+        "comment_likes": await snapshot_table(db, CommentLike),
     }
     tables["media_files"] = await snapshot_table(db, MediaFile)
     tables["albums"] = await snapshot_table(db, Album)

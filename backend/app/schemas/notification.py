@@ -20,6 +20,7 @@ class NotificationResponse(BaseModel):
     target_type: str
     target_id: UUID
     post_id: Optional[UUID]
+    target_deleted: bool = False
     message: str
     is_read: bool
     created_at: datetime

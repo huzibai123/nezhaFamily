@@ -55,10 +55,15 @@ class Settings(BaseSettings):
     # JWT 配置
     SECRET_KEY: str = "CHANGE_THIS_IN_PRODUCTION"  # 生产环境必须修改
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 天
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
     # 代理配置
     TRUSTED_PROXY_COUNT: int = 0
+
+    # 数据库连接池配置
+    DATABASE_POOL_SIZE: int = 5
+    DATABASE_MAX_OVERFLOW: int = 10
+    DATABASE_POOL_TIMEOUT: int = 30
 
     # 文件存储配置
     MEDIA_ROOT: str = str(_DEFAULT_MEDIA_ROOT)
@@ -113,6 +118,17 @@ class Settings(BaseSettings):
             raise ValueError("TRUSTED_PROXY_COUNT 不能为负数")
         return v
 
+    @field_validator(
+        "DATABASE_POOL_SIZE",
+        "DATABASE_MAX_OVERFLOW",
+        "DATABASE_POOL_TIMEOUT",
+    )
+    @classmethod
+    def validate_database_pool_settings(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError("数据库连接池配置不能为负数")
+        return v
+
     @field_validator("MEDIA_TRASH_RETENTION_DAYS")
     @classmethod
     def validate_media_trash_retention_days(cls, v: int) -> int:
@@ -122,10 +138,15 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_production_secret_key(self):
-        if self.ENVIRONMENT == "production" and (
-            not self.SECRET_KEY or self.SECRET_KEY == "CHANGE_THIS_IN_PRODUCTION"
-        ):
+        if self.ENVIRONMENT != "production":
+            return self
+
+        if not self.SECRET_KEY or self.SECRET_KEY == "CHANGE_THIS_IN_PRODUCTION":
             raise ValueError("生产环境必须设置非默认 SECRET_KEY")
+        if len(self.SECRET_KEY) < 32:
+            raise ValueError("生产环境 SECRET_KEY 长度至少 32 字符")
+        if "*" in self.ALLOWED_ORIGINS:
+            raise ValueError("生产环境 ALLOWED_ORIGINS 不能包含通配符 *")
         return self
 
     model_config = SettingsConfigDict(

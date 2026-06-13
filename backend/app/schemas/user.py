@@ -8,6 +8,8 @@ from datetime import datetime, date
 from pydantic import BaseModel, Field, field_validator
 from uuid import UUID
 
+from app.core.password_policy import validate_password_strength
+
 
 class UserBase(BaseModel):
     """用户基础字段"""
@@ -17,7 +19,7 @@ class UserBase(BaseModel):
 
 class UserCreate(UserBase):
     """用户注册请求"""
-    password: str = Field(..., min_length=6, max_length=100, description="密码（至少6位）")
+    password: str = Field(..., min_length=10, max_length=100, description="密码（至少10位，包含字母和数字）")
     invite_code: str = Field(..., min_length=8, max_length=32, description="邀请码")
 
     @field_validator("username")
@@ -27,6 +29,16 @@ class UserCreate(UserBase):
         if not re.match(r'^[a-zA-Z0-9_一-鿿]+$', v):
             raise ValueError("用户名只能包含字母、数字、下划线和中文")
         return v
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v: str, info) -> str:
+        data = info.data
+        return validate_password_strength(
+            v,
+            username=data.get("username"),
+            email=data.get("email"),
+        )
 
 
 class UserLogin(BaseModel):

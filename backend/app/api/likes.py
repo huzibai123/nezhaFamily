@@ -10,7 +10,7 @@ from app.db.session import get_db
 from app.models.user import User
 from app.models.post import Post
 from app.models.comment import Comment
-from app.models.like import Like
+from app.models.like import CommentLike, PostLike
 from app.schemas.like import LikeResponse
 from app.core.security import get_current_user
 from app.api.notifications import (
@@ -61,10 +61,9 @@ async def toggle_post_like(
     )
 
     # 查询是否已点赞
-    like_query = select(Like).where(
-        Like.user_id == current_user.id,
-        Like.target_type == 'post',
-        Like.target_id == post_id
+    like_query = select(PostLike).where(
+        PostLike.user_id == current_user.id,
+        PostLike.post_id == post_id
     )
     like_result = await db.execute(like_query)
     existing_like = like_result.scalar_one_or_none()
@@ -76,10 +75,9 @@ async def toggle_post_like(
         liked = False
     else:
         # 未点赞，添加点赞
-        new_like = Like(
+        new_like = PostLike(
             user_id=current_user.id,
-            target_type='post',
-            target_id=post_id,
+            post_id=post_id,
         )
         db.add(new_like)
         await create_notification(
@@ -99,9 +97,8 @@ async def toggle_post_like(
     await db.commit()
 
     # 实时统计点赞数（与列表接口保持一致）
-    like_count_query = select(func.count()).select_from(Like).where(
-        Like.target_type == 'post',
-        Like.target_id == post_id
+    like_count_query = select(func.count()).select_from(PostLike).where(
+        PostLike.post_id == post_id
     )
     like_count_result = await db.execute(like_count_query)
     like_count = like_count_result.scalar() or 0
@@ -136,10 +133,9 @@ async def toggle_comment_like(
     )
 
     # 查询是否已点赞
-    like_query = select(Like).where(
-        Like.user_id == current_user.id,
-        Like.target_type == 'comment',
-        Like.target_id == comment_id
+    like_query = select(CommentLike).where(
+        CommentLike.user_id == current_user.id,
+        CommentLike.comment_id == comment_id
     )
     like_result = await db.execute(like_query)
     existing_like = like_result.scalar_one_or_none()
@@ -151,10 +147,9 @@ async def toggle_comment_like(
         liked = False
     else:
         # 未点赞，添加点赞
-        new_like = Like(
+        new_like = CommentLike(
             user_id=current_user.id,
-            target_type='comment',
-            target_id=comment_id,
+            comment_id=comment_id,
         )
         db.add(new_like)
         await create_notification(
@@ -174,9 +169,8 @@ async def toggle_comment_like(
     await db.commit()
 
     # 实时统计点赞数（与列表接口保持一致）
-    like_count_query = select(func.count()).select_from(Like).where(
-        Like.target_type == 'comment',
-        Like.target_id == comment_id
+    like_count_query = select(func.count()).select_from(CommentLike).where(
+        CommentLike.comment_id == comment_id
     )
     like_count_result = await db.execute(like_count_query)
     like_count = like_count_result.scalar() or 0

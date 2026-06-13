@@ -74,6 +74,29 @@ async def test_upload_image_success(
 
 
 @pytest.mark.asyncio
+async def test_upload_stores_safe_original_filename(
+    client: AsyncClient,
+    test_user: User,
+    db: AsyncSession,
+    isolated_media_root: Path,
+):
+    """上传展示名只保存 basename，磁盘文件名仍使用服务端 UUID。"""
+    token = create_access_token(data={"user_id": str(test_user.id)})
+    headers = {"Authorization": f"Bearer {token}"}
+    files = {"files": ("../../family.png", BytesIO(PNG_IMAGE_BYTES), "image/png")}
+
+    response = await client.post("/api/v1/upload", files=files, headers=headers)
+
+    assert response.status_code == 200
+    stored_media = await db.scalar(
+        select(MediaFile).where(MediaFile.original_name == "family.png")
+    )
+    assert stored_media is not None
+    assert stored_media.file_path.startswith("/media/")
+    assert ".." not in stored_media.file_path
+
+
+@pytest.mark.asyncio
 async def test_upload_response_url_can_access_signed_media(
     client: AsyncClient,
     test_user: User,

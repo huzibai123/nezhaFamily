@@ -31,7 +31,7 @@ from app.models.ai import (
     AIReportDraft,
 )
 from app.models.comment import Comment
-from app.models.like import Like
+from app.models.like import PostLike
 from app.models.media import MediaFile
 from app.models.notification import Notification
 from app.models.post import Post
@@ -619,15 +619,14 @@ async def generate_ai_comment_for_post(db: AsyncSession, post_id: UUID) -> Optio
     return comment
 
 
-async def create_ai_like_for_post(db: AsyncSession, post: Post) -> Optional[Like]:
+async def create_ai_like_for_post(db: AsyncSession, post: Post) -> Optional[PostLike]:
     from app.api.notifications import build_like_post_message, create_notification
 
     existing_ai_like = await db.execute(
-        select(Like.id)
-        .join(User, Like.user_id == User.id)
+        select(PostLike.id)
+        .join(User, PostLike.user_id == User.id)
         .where(
-            Like.target_type == "post",
-            Like.target_id == post.id,
+            PostLike.post_id == post.id,
             User.is_system.is_(True),
             User.system_type.in_(("ai_persona", "ai_system")),
         )
@@ -645,7 +644,7 @@ async def create_ai_like_for_post(db: AsyncSession, post: Post) -> Optional[Like
         return None
     sync_persona_system_user(actor, persona)
 
-    like = Like(user_id=actor.id, target_type="post", target_id=post.id)
+    like = PostLike(user_id=actor.id, post_id=post.id)
     db.add(like)
     await create_notification(
         db,

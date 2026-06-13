@@ -11,7 +11,7 @@ from app.db.session import get_db
 from app.models.user import User
 from app.models.post import Post
 from app.models.comment import Comment
-from app.models.like import Like
+from app.models.like import PostLike
 from app.schemas.user import (
     UserResponse,
     UserProfile,
@@ -153,18 +153,17 @@ async def get_user_posts(
     if post_ids:
         # 点赞数
         likes_count_query = (
-            select(Like.target_id, func.count(Like.id).label('count'))
-            .where(Like.target_type == 'post', Like.target_id.in_(post_ids))
-            .group_by(Like.target_id)
+            select(PostLike.post_id, func.count(PostLike.id).label('count'))
+            .where(PostLike.post_id.in_(post_ids))
+            .group_by(PostLike.post_id)
         )
         likes_count_result = await db.execute(likes_count_query)
-        likes_count = {row.target_id: row.count for row in likes_count_result}
+        likes_count = {row.post_id: row.count for row in likes_count_result}
 
         # 当前用户是否点赞
-        user_likes_query = select(Like.target_id).where(
-            Like.user_id == current_user.id,
-            Like.target_type == 'post',
-            Like.target_id.in_(post_ids)
+        user_likes_query = select(PostLike.post_id).where(
+            PostLike.user_id == current_user.id,
+            PostLike.post_id.in_(post_ids)
         )
         user_likes_result = await db.execute(user_likes_query)
         user_likes = set(user_likes_result.scalars().all())
@@ -230,10 +229,9 @@ async def get_user_stats(
     # 查询获赞数（帖子获得的点赞数）
     like_count_query = (
         select(func.count())
-        .select_from(Like)
-        .join(Post, Like.target_id == Post.id)
+        .select_from(PostLike)
+        .join(Post, PostLike.post_id == Post.id)
         .where(
-            Like.target_type == 'post',
             Post.author_id == user_id
         )
     )

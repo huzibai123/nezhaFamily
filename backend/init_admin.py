@@ -10,6 +10,7 @@ from getpass import getpass
 
 from sqlalchemy import select
 
+from app.core.password_policy import validate_password_strength
 from app.db.session import AsyncSessionLocal
 from app.models.user import User
 from app.core.security import get_password_hash
@@ -56,15 +57,17 @@ async def create_admin():
             print("❌ 用户名或邮箱已被使用")
             sys.exit(1)
 
-        password = getpass("请输入管理员密码（至少6位）: ")
+        password = getpass("请输入管理员密码（至少10位，包含字母和数字）: ")
         password_confirm = getpass("请再次输入密码: ")
 
         if password != password_confirm:
             print("❌ 两次输入的密码不一致")
             sys.exit(1)
 
-        if len(password) < 6:
-            print("❌ 密码长度至少为 6 位")
+        try:
+            validate_password_strength(password, username=username, email=email)
+        except ValueError as exc:
+            print(f"❌ {exc}")
             sys.exit(1)
 
         # 生成邀请码

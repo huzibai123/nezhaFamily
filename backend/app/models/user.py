@@ -30,7 +30,7 @@ class User(Base):
 
     # 邀请码机制
     invite_code = Column(String(32), unique=True, nullable=True)  # 用户自己的邀请码
-    invited_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)  # 被谁邀请
+    invited_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)  # 被谁邀请
 
     # 头像
     avatar_url = Column(String(500), nullable=True)
@@ -53,7 +53,8 @@ class User(Base):
         cascade="all, delete-orphan",
         foreign_keys="Comment.author_id",
     )  # 发布的评论
-    likes = relationship("Like", back_populates="user", cascade="all, delete-orphan")  # 点赞记录
+    post_likes = relationship("PostLike", back_populates="user", cascade="all, delete-orphan")
+    comment_likes = relationship("CommentLike", back_populates="user", cascade="all, delete-orphan")
     media_files = relationship(
         "MediaFile",
         back_populates="uploader",

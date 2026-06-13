@@ -54,6 +54,7 @@ def _notification_response(
         target_type=notification.target_type,
         target_id=notification.target_id,
         post_id=notification.post_id,
+        target_deleted=notification.target_deleted,
         message=notification.message,
         is_read=notification.is_read,
         created_at=notification.created_at,

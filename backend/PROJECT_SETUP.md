@@ -120,7 +120,7 @@ curl -X POST http://localhost:8000/api/v1/register \
   -d '{
     "username": "testuser",
     "email": "test@example.com",
-    "password": "password123",
+    "password": "FamilyPass123",
     "invite_code": "YOUR_INVITE_CODE"
   }'
 ```
@@ -131,7 +131,7 @@ curl -X POST http://localhost:8000/api/v1/login \
   -H "Content-Type: application/json" \
   -d '{
     "username": "testuser",
-    "password": "password123"
+    "password": "FamilyPass123"
   }'
 ```
 
@@ -145,9 +145,9 @@ curl -X GET http://localhost:8000/api/v1/me \
 
 ### 认证流程
 1. 用户使用邀请码注册，密码经过 bcrypt 加密存储
-2. 登录时验证密码，成功后返回 JWT Token
+2. 登录时验证密码，成功后返回带 `jti` 的 JWT Token
 3. 后续请求在 Header 中携带 Token: `Authorization: Bearer <token>`
-4. 服务端通过 `get_current_user_id` 或 `get_current_user` 依赖注入验证 Token
+4. 服务端通过依赖注入验证 Token，并检查 Redis 撤销黑名单
 
 ### 数据库模型
 - User 模型使用 UUID 作为主键（更安全）
@@ -156,7 +156,9 @@ curl -X GET http://localhost:8000/api/v1/me \
 
 ### 安全特性
 - 密码使用 bcrypt 哈希
-- JWT Token 有效期 7 天（可配置）
+- JWT Token 生产默认有效期 1 小时（可配置）
+- 登出会撤销当前 Token
+- 密码至少 10 位且必须同时包含字母和数字
 - 邀请码机制防止公开注册
 - 支持角色权限控制（admin/member）
 

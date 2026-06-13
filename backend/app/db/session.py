@@ -19,6 +19,14 @@ engine_options = {
 }
 if "sqlite" in DATABASE_URL:
     engine_options["poolclass"] = NullPool
+else:
+    engine_options.update(
+        {
+            "pool_size": settings.DATABASE_POOL_SIZE,
+            "max_overflow": settings.DATABASE_MAX_OVERFLOW,
+            "pool_timeout": settings.DATABASE_POOL_TIMEOUT,
+        }
+    )
 
 engine = create_async_engine(DATABASE_URL, **engine_options)
 

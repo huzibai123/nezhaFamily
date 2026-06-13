@@ -47,9 +47,7 @@ class Comment(Base):
     parent = relationship("Comment", remote_side=[id], backref="replies")  # 父评论和子回复
     ai_persona = relationship("AIPersona")
     editor = relationship("User", foreign_keys=[edited_by])
-    likes = relationship("Like", cascade="all, delete-orphan",
-                        primaryjoin="and_(Comment.id==foreign(Like.target_id), Like.target_type=='comment')",
-                        overlaps="likes")  # 消除与 Post.likes 的多态列冲突警告
+    likes = relationship("CommentLike", back_populates="comment", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Comment(id={self.id}, post_id={self.post_id}, parent_id={self.parent_id})>"

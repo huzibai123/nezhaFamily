@@ -13,7 +13,8 @@ from app.models.ai import AIPersona
 from app.models.user import User
 from app.models.post import Post
 from app.models.comment import Comment
-from app.models.like import Like
+from app.models.like import CommentLike
+from app.models.notification import Notification
 from app.schemas.comment import CommentCreate, CommentResponse, CommentListResponse, CommentUpdate
 from app.core.media_utils import signed_media_url
 from app.core.security import get_current_user
@@ -192,18 +193,17 @@ async def get_comments(
     if comment_ids:
         # 点赞数
         likes_count_query = (
-            select(Like.target_id, func.count(Like.id).label('count'))
-            .where(Like.target_type == 'comment', Like.target_id.in_(comment_ids))
-            .group_by(Like.target_id)
+            select(CommentLike.comment_id, func.count(CommentLike.id).label('count'))
+            .where(CommentLike.comment_id.in_(comment_ids))
+            .group_by(CommentLike.comment_id)
         )
         likes_count_result = await db.execute(likes_count_query)
-        likes_count = {row.target_id: row.count for row in likes_count_result}
+        likes_count = {row.comment_id: row.count for row in likes_count_result}
 
         # 当前用户是否点赞
-        user_likes_query = select(Like.target_id).where(
-            Like.user_id == current_user.id,
-            Like.target_type == 'comment',
-            Like.target_id.in_(comment_ids)
+        user_likes_query = select(CommentLike.comment_id).where(
+            CommentLike.user_id == current_user.id,
+            CommentLike.comment_id.in_(comment_ids)
         )
         user_likes_result = await db.execute(user_likes_query)
         user_likes = set(user_likes_result.scalars().all())
@@ -286,16 +286,14 @@ async def update_comment(
         raise HTTPException(status_code=404, detail="作者不存在")
 
     likes_count_result = await db.execute(
-        select(func.count()).select_from(Like).where(
-            Like.target_type == "comment",
-            Like.target_id == comment.id,
+        select(func.count()).select_from(CommentLike).where(
+            CommentLike.comment_id == comment.id,
         )
     )
     user_like_result = await db.execute(
-        select(Like).where(
-            Like.user_id == current_user.id,
-            Like.target_type == "comment",
-            Like.target_id == comment.id,
+        select(CommentLike).where(
+            CommentLike.user_id == current_user.id,
+            CommentLike.comment_id == comment.id,
         )
     )
     persona = await db.get(AIPersona, comment.ai_persona_id) if comment.ai_persona_id else None
@@ -351,10 +349,12 @@ async def delete_comment(
 
         descendants_query = select(descendants_cte.c.id)
         await db.execute(
-            sql_delete(Like).where(
-                Like.target_type == 'comment',
-                Like.target_id.in_(descendants_query),
+            update(Notification)
+            .where(
+                Notification.target_type == "comment",
+                Notification.target_id.in_(descendants_query),
             )
+            .values(target_deleted=True)
         )
         await db.execute(
             sql_delete(Comment).where(Comment.id.in_(descendants_query))

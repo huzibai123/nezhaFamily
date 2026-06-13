@@ -29,7 +29,7 @@ pip install -r requirements.txt
 cp .env.example .env
 ```
 
-**重要**：生产环境必须修改 `SECRET_KEY`：
+**重要**：生产环境必须修改 `SECRET_KEY`，长度至少 32 字符：
 
 ```bash
 # 生成随机密钥
@@ -78,7 +78,7 @@ curl -X POST http://localhost:8000/api/v1/register \
   -d '{
     "username": "testuser",
     "email": "test@example.com",
-    "password": "password123",
+    "password": "FamilyPass123",
     "invite_code": "VALID_INVITE_CODE"
   }'
 ```
@@ -107,7 +107,7 @@ curl -X POST http://localhost:8000/api/v1/login \
   -H "Content-Type: application/json" \
   -d '{
     "username": "testuser",
-    "password": "password123"
+    "password": "FamilyPass123"
   }'
 ```
 

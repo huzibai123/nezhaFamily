@@ -780,8 +780,8 @@ async function like(p: Post) {
   }
 }
 
-function handleLogout() {
-  logout()
+async function handleLogout() {
+  await logout()
   router.push('/login')
 }
 

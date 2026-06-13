@@ -118,7 +118,7 @@ async def test_admin(db: AsyncSession) -> User:
     admin = User(
         username="testadmin",
         email="admin@test.com",
-        password_hash=get_password_hash("admin123456"),
+        password_hash=get_password_hash("AdminPass123"),
         role="admin",
         invite_code="TEST_ADMIN_INVITE",
     )
@@ -137,7 +137,7 @@ async def test_user(db: AsyncSession) -> User:
     user = User(
         username="testuser",
         email="user@test.com",
-        password_hash=get_password_hash("user123456"),
+        password_hash=get_password_hash("UserPass123"),
         role="member",
         invite_code=None,
         invited_by=None,

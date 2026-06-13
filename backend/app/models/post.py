@@ -38,8 +38,7 @@ class Post(Base):
     # 关系定义
     author = relationship("User", back_populates="posts")  # 作者
     comments = relationship("Comment", back_populates="post", cascade="all, delete-orphan")  # 评论列表
-    likes = relationship("Like", cascade="all, delete-orphan",
-                        primaryjoin="and_(Post.id==foreign(Like.target_id), Like.target_type=='post')")
+    likes = relationship("PostLike", back_populates="post", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Post(id={self.id}, author_id={self.author_id}, created_at={self.created_at})>"

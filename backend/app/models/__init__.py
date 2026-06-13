@@ -21,6 +21,8 @@ _MODEL_EXPORTS = {
     "Post": "app.models.post",
     "Comment": "app.models.comment",
     "Like": "app.models.like",
+    "PostLike": "app.models.like",
+    "CommentLike": "app.models.like",
     "MediaFile": "app.models.media",
     "MediaFavorite": "app.models.media",
     "Album": "app.models.album",

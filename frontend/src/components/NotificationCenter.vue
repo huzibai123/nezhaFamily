@@ -110,8 +110,8 @@ async function readAll() {
   }
 }
 
-function notificationLink(item: NotificationItem): RouteLocationRaw {
-  if (!item.post_id) return '/'
+function notificationLink(item: NotificationItem): RouteLocationRaw | null {
+  if (item.target_deleted || !item.post_id) return null
   if (item.target_type === 'comment') {
     return { path: `/post/${item.post_id}`, query: { comment: item.target_id } }
   }
@@ -128,6 +128,14 @@ function formatTime(value: string): string {
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)} 分钟前`
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)} 小时前`
   return new Date(value).toLocaleDateString('zh-CN')
+}
+
+function notificationMessage(item: NotificationItem): string {
+  return item.target_deleted ? '内容已删除' : item.message
+}
+
+function notificationComponent(item: NotificationItem) {
+  return notificationLink(item) ? 'RouterLink' : 'button'
 }
 </script>
 
@@ -194,19 +202,21 @@ function formatTime(value: string): string {
     </p>
 
     <div v-else-if="visibleNotifications.length" class="space-y-2">
-      <RouterLink
+      <component
         v-for="item in visibleNotifications"
         :key="item.id"
-        :to="notificationLink(item)"
+        :is="notificationComponent(item)"
+        :to="notificationLink(item) || undefined"
         @click="markRead(item)"
-        class="notification-item block rounded-lg border border-[var(--border)] p-3"
+        class="notification-item block w-full rounded-lg border border-[var(--border)] p-3 text-left"
         :class="{ 'is-unread': !item.is_read }"
+        :type="notificationLink(item) ? undefined : 'button'"
       >
         <div class="flex items-start gap-2">
           <span class="mt-1 h-1.5 w-1.5 shrink-0 rounded-full" :class="item.is_read ? 'bg-[var(--border)]' : 'bg-[var(--accent)]'"></span>
           <div class="min-w-0 flex-1">
             <div class="flex items-center justify-between gap-2">
-              <p class="line-clamp-2 text-xs leading-5 text-[var(--text-secondary)]">{{ item.message }}</p>
+              <p class="line-clamp-2 text-xs leading-5 text-[var(--text-secondary)]">{{ notificationMessage(item) }}</p>
               <span v-if="!compact" class="shrink-0 rounded-md bg-[var(--surface-elevated)] px-2 py-1 text-[11px] text-[var(--text-muted)]">
                 {{ typeLabel(item.type) }}
               </span>
@@ -214,7 +224,7 @@ function formatTime(value: string): string {
             <p class="mt-1 text-[11px] text-[var(--text-muted)]">{{ formatTime(item.created_at) }}</p>
           </div>
         </div>
-      </RouterLink>
+      </component>
     </div>
 
     <div v-else class="rounded-lg border border-dashed border-[var(--border)] p-5 text-center">

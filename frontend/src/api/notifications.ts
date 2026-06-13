@@ -16,6 +16,7 @@ export interface NotificationItem {
   target_type: string
   target_id: string
   post_id?: string | null
+  target_deleted: boolean
   message: string
   is_read: boolean
   created_at: string

@@ -38,6 +38,7 @@ class Notification(Base):
         nullable=True,
         index=True,
     )
+    target_deleted = Column(Boolean, nullable=False, default=False, index=True)
     message = Column(Text, nullable=False)
     is_read = Column(Boolean, nullable=False, default=False, index=True)
     created_at = Column(

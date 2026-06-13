@@ -2,22 +2,32 @@
 安全与认证模块
 提供密码哈希、JWT Token 生成与验证功能
 """
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from uuid import uuid4
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from redis.exceptions import RedisError
 
 from app.core.config import settings
 from app.db.session import get_db
+
+logger = logging.getLogger(__name__)
 
 # 密码哈希上下文（使用 bcrypt）
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # HTTP Bearer 认证方案
 security = HTTPBearer()
+redis_client = None
+
+
+def _utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -43,14 +53,15 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     """
     to_encode = data.copy()
 
+    now = _utc_now()
     if expires_delta:
-        expire = datetime.now(timezone.utc) + expires_delta
+        expire = now + expires_delta
     else:
-        expire = datetime.now(timezone.utc) + timedelta(
+        expire = now + timedelta(
             minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
         )
 
-    to_encode.update({"exp": expire})
+    to_encode.update({"exp": expire, "iat": now, "jti": uuid4().hex})
     encoded_jwt = jwt.encode(
         to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM
     )
@@ -83,8 +94,99 @@ def decode_access_token(token: str) -> dict:
         )
 
 
-async def get_current_user_id(
+def _revoked_token_key(jti: str) -> str:
+    return f"revoked_token:{jti}"
+
+
+def _token_expiry_timestamp(payload: dict) -> int:
+    exp = payload.get("exp")
+    if isinstance(exp, int):
+        return exp
+    if isinstance(exp, float):
+        return int(exp)
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Token 中缺少过期时间",
+    )
+
+
+def _token_jti(payload: dict) -> str:
+    jti = payload.get("jti")
+    if not isinstance(jti, str) or not jti:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token 中缺少会话标识",
+        )
+    return jti
+
+
+def get_redis_client(request: Request):
+    if redis_client is not None:
+        return redis_client
+    return getattr(request.app.state, "redis_client", None)
+
+
+async def is_token_revoked(request: Request, payload: dict) -> bool:
+    """检查 token 是否已被登出撤销；Redis 不可用时普通鉴权 fail-open。"""
+    client = get_redis_client(request)
+    if client is None:
+        logger.warning("Token 撤销检查 Redis 尚未初始化，跳过黑名单检查")
+        return False
+
+    try:
+        return bool(await client.exists(_revoked_token_key(_token_jti(payload))))
+    except RedisError as exc:
+        logger.warning("Token 撤销检查 Redis 不可用，跳过黑名单检查: %s", exc)
+        return False
+
+
+async def revoke_token(request: Request, token: str) -> None:
+    """把当前 token 加入 Redis 黑名单；失败时让调用方返回 503。"""
+    payload = decode_access_token(token)
+    jti = _token_jti(payload)
+    expires_at = _token_expiry_timestamp(payload)
+    ttl = max(1, expires_at - int(_utc_now().timestamp()))
+
+    client = get_redis_client(request)
+    if client is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="登出服务暂时不可用",
+        )
+
+    try:
+        await client.setex(_revoked_token_key(jti), ttl, "1")
+    except RedisError as exc:
+        logger.warning("写入 token 撤销黑名单失败: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="登出服务暂时不可用",
+        ) from exc
+
+
+async def get_current_token_payload(
+    request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> dict:
+    token = credentials.credentials
+    payload = decode_access_token(token)
+    if await is_token_revoked(request, payload):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token 已失效",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return payload
+
+
+async def get_current_token(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> str:
+    return credentials.credentials
+
+
+async def get_current_user_id(
+    payload: dict = Depends(get_current_token_payload),
 ):
     """
     依赖注入函数：从请求头中提取并验证 JWT token，返回当前用户 ID
@@ -98,9 +200,6 @@ async def get_current_user_id(
         HTTPException: token 无效、过期或缺少 user_id
     """
     from uuid import UUID
-
-    token = credentials.credentials
-    payload = decode_access_token(token)
 
     user_id_str: Optional[str] = payload.get("user_id")
     if user_id_str is None:

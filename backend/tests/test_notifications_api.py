@@ -142,6 +142,45 @@ async def test_like_notification_dedupes_repeated_likes(
 
 
 @pytest.mark.asyncio
+async def test_delete_comment_marks_related_notifications_target_deleted(
+    client: AsyncClient,
+    db: AsyncSession,
+    test_admin: User,
+    test_user: User,
+):
+    """删除评论后保留的评论通知会标记目标已删除。"""
+    post = Post(author_id=test_user.id, content="有通知的帖子", media_urls=[])
+    comment = Comment(post=post, author_id=test_admin.id, content="会被删除的评论")
+    db.add_all([post, comment])
+    await db.flush()
+    notification = Notification(
+        recipient_id=test_user.id,
+        actor_id=test_admin.id,
+        type="reply",
+        target_type="comment",
+        target_id=comment.id,
+        post_id=None,
+        message="回复提醒",
+    )
+    db.add(notification)
+    await db.commit()
+    await db.refresh(comment)
+
+    delete_response = await client.delete(
+        f"/api/v1/comments/{comment.id}",
+        headers=auth_headers(test_admin),
+    )
+    response = await client.get(
+        "/api/v1/notifications",
+        headers=auth_headers(test_user),
+    )
+
+    assert delete_response.status_code == 204
+    payload = response.json()["notifications"][0]
+    assert payload["target_deleted"] is True
+
+
+@pytest.mark.asyncio
 async def test_notifications_filter_by_type(
     client: AsyncClient,
     db: AsyncSession,

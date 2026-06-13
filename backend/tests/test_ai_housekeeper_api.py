@@ -17,7 +17,7 @@ from app.core.security import create_access_token
 from app.models.ai import AIAlbumSuggestion, AIJob, AIProviderConfig, AIReportDraft, AIPersona
 from app.models.album import Album
 from app.models.comment import Comment
-from app.models.like import Like
+from app.models.like import PostLike
 from app.models.media import MediaFile
 from app.models.notification import Notification
 from app.models.post import Post
@@ -54,11 +54,10 @@ async def ai_comment_count(db: AsyncSession, post_id) -> int:
 
 async def ai_post_like_count(db: AsyncSession, post_id) -> int:
     result = await db.execute(
-        select(Like.id)
-        .join(User, Like.user_id == User.id)
+        select(PostLike.id)
+        .join(User, PostLike.user_id == User.id)
         .where(
-            Like.target_type == "post",
-            Like.target_id == post_id,
+            PostLike.post_id == post_id,
             User.is_system.is_(True),
             User.system_type.in_(("ai_persona", "ai_system")),
         )

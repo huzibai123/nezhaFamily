@@ -2,6 +2,7 @@ import { ref, computed } from 'vue'
 import {
   getMe,
   login as loginRequest,
+  logout as logoutRequest,
   register as registerRequest,
   type AuthUser,
 } from '@/api/auth'
@@ -83,8 +84,14 @@ function clearAuthState() {
 setUnauthorizedStateHandler(clearAuthState)
 
 // 登出
-function logout() {
-  clearAuthState()
+async function logout() {
+  try {
+    await logoutRequest()
+  } catch {
+    // 即使服务端撤销暂时失败，也要让当前设备退出登录。
+  } finally {
+    clearAuthState()
+  }
 }
 
 // 更新用户信息

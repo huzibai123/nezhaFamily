@@ -18,6 +18,7 @@ from getpass import getpass
 
 from sqlalchemy import or_, select
 
+from app.core.password_policy import validate_password_strength
 from app.core.security import get_password_hash
 from app.db.session import AsyncSessionLocal
 from app.models.user import User
@@ -77,7 +78,7 @@ async def create_admin() -> None:
         if password is None:
             password = _read_value(
                 "INITIAL_ADMIN_PASSWORD",
-                "请输入管理员密码（至少6位）: ",
+                "请输入管理员密码（至少10位，包含字母和数字）: ",
                 secret=True,
             )
             if sys.stdin.isatty():
@@ -85,8 +86,10 @@ async def create_admin() -> None:
                 if password != password_confirm:
                     raise RuntimeError("两次输入的密码不一致")
 
-        if len(password) < 6:
-            raise RuntimeError("管理员密码长度至少为 6 位")
+        try:
+            validate_password_strength(password, username=username, email=email)
+        except ValueError as exc:
+            raise RuntimeError(str(exc)) from exc
 
         result = await session.execute(
             select(User.id).where(or_(User.username == username, User.email == email)).limit(1)

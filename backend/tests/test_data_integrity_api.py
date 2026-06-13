@@ -15,7 +15,7 @@ from app.main import app
 from app.models.ai import AIPersona
 from app.models.comment import Comment
 from app.models.event import Event
-from app.models.like import Like
+from app.models.like import CommentLike, PostLike
 from app.models.media import MediaFile
 from app.models.post import Post
 from app.models.user import User
@@ -83,10 +83,9 @@ async def test_concurrent_like_toggle_does_not_raise_500(
     assert [response.status_code for response in responses] == [200, 200]
 
     result = await db.execute(
-        select(Like).where(
-            Like.user_id == test_user.id,
-            Like.target_type == "post",
-            Like.target_id == post.id,
+        select(PostLike).where(
+            PostLike.user_id == test_user.id,
+            PostLike.post_id == post.id,
         )
     )
     assert len(result.scalars().all()) <= 1
@@ -141,10 +140,9 @@ async def test_delete_post_removes_comment_likes(
     comment = Comment(post=post, author_id=test_user.id, content="会被删的评论")
     db.add_all([post, comment])
     await db.flush()
-    comment_like = Like(
+    comment_like = CommentLike(
         user_id=test_admin.id,
-        target_type="comment",
-        target_id=comment.id,
+        comment_id=comment.id,
     )
     db.add(comment_like)
     await db.commit()
@@ -157,9 +155,8 @@ async def test_delete_post_removes_comment_likes(
     assert response.status_code == 204
 
     orphan_like = await db.scalar(
-        select(Like).where(
-            Like.target_type == "comment",
-            Like.target_id == comment.id,
+        select(CommentLike).where(
+            CommentLike.comment_id == comment.id,
         )
     )
     assert orphan_like is None
@@ -198,10 +195,9 @@ async def test_delete_comment_removes_nested_descendants_and_likes(
     db.add(nested_reply)
     await db.flush()
     db.add(
-        Like(
+        CommentLike(
             user_id=test_user.id,
-            target_type="comment",
-            target_id=nested_reply.id,
+            comment_id=nested_reply.id,
         )
     )
     post_id = post.id
@@ -219,7 +215,7 @@ async def test_delete_comment_removes_nested_descendants_and_likes(
         select(func.count()).select_from(Comment).where(Comment.post_id == post_id)
     )
     remaining_likes = await db.scalar(
-        select(func.count()).select_from(Like).where(Like.target_type == "comment")
+        select(func.count()).select_from(CommentLike)
     )
     await db.refresh(post)
     assert remaining_comments == 0
@@ -296,6 +292,36 @@ async def test_user_delete_cascades_created_events(
     await db.commit()
 
     assert await db.get(Event, event_id) is None
+
+
+@pytest.mark.asyncio
+async def test_user_delete_sets_invited_by_to_null(
+    db: AsyncSession,
+):
+    """删除邀请人不应阻塞被邀请成员保留。"""
+    inviter = User(
+        username="inviter",
+        email="inviter@test.com",
+        password_hash="!",
+        role="member",
+    )
+    invitee = User(
+        username="invitee",
+        email="invitee@test.com",
+        password_hash="!",
+        role="member",
+        inviter=inviter,
+    )
+    db.add_all([inviter, invitee])
+    await db.flush()
+    invitee_id = invitee.id
+
+    await db.delete(inviter)
+    await db.commit()
+
+    persisted_invitee = await db.get(User, invitee_id)
+    assert persisted_invitee is not None
+    assert persisted_invitee.invited_by is None
 
 
 @pytest.mark.asyncio

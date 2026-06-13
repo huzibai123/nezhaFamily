@@ -26,7 +26,9 @@ from app.core.security import (
     verify_password,
     get_password_hash,
     create_access_token,
+    get_current_token,
     get_current_user_id,
+    revoke_token,
 )
 from app.core.config import settings
 from app.api.users import user_profile_response, user_response
@@ -355,14 +357,18 @@ async def get_current_user(
 
 
 @router.post("/logout")
-async def logout(user_id: UUID = Depends(get_current_user_id)):
+async def logout(
+    request: Request,
+    token: str = Depends(get_current_token),
+    user_id: UUID = Depends(get_current_user_id),
+):
     """
     用户登出
 
-    由于使用 JWT，服务端无状态，实际登出由客户端删除 Token 实现
-    此接口主要用于记录登出日志（可选）
+    当前 access token 会写入 Redis 黑名单，直到原始过期时间。
     """
-    # TODO: 可以在这里添加登出日志记录
+    del user_id
+    await revoke_token(request, token)
     return {"message": "登出成功"}
 
 
