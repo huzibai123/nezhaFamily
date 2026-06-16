@@ -1,5 +1,8 @@
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { getFamilySettings, type FamilySettings, type FamilyThemeAssets } from '@/api/admin'
+import { useTheme } from '@/composables/useTheme'
+
+const { currentTheme } = useTheme()
 
 const defaultThemeAssets: FamilyThemeAssets = {
   backgrounds: [],
@@ -30,6 +33,15 @@ const backgroundImage = computed(() => {
   return themeAssets.value.backgrounds.find(asset => asset.enabled)?.url || ''
 })
 const logoUrl = computed(() => settings.value.logo_url || '')
+const shouldApplyFamilyColors = computed(() => {
+  return currentTheme.value.allowFamilyColorOverride === true
+})
+
+watch(currentTheme, () => {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => applySettings(settings.value))
+  })
+})
 
 async function loadFamilySettings(force = false) {
   if (loading.value || (loaded.value && !force)) return settings.value
@@ -72,6 +84,8 @@ function setFamilySettings(nextSettings: Partial<FamilySettings>) {
 }
 
 function applySettings(value: FamilySettings) {
+  if (!shouldApplyFamilyColors.value) return
+
   const root = document.documentElement
   if (value.theme_color) root.style.setProperty('--surface', value.theme_color)
   if (value.accent_color) {

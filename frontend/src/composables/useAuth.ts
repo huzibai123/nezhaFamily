@@ -7,6 +7,7 @@ import {
   type AuthUser,
 } from '@/api/auth'
 import { setUnauthorizedStateHandler } from '@/api'
+import { useTheme } from '@/composables/useTheme'
 
 // 用户信息接口
 export type User = AuthUser
@@ -14,6 +15,7 @@ export type User = AuthUser
 // 全局状态
 const token = ref<string | null>(localStorage.getItem('token'))
 const user = ref<User | null>(null)
+const { syncThemeForUser } = useTheme()
 
 // 计算属性
 const isAuthenticated = computed(() => !!token.value)
@@ -25,9 +27,12 @@ function initUser() {
   if (savedUser && token.value) {
     try {
       user.value = JSON.parse(savedUser)
+      syncThemeForUser(user.value)
     } catch (e) {
       console.error('Failed to parse user data:', e)
     }
+  } else {
+    syncThemeForUser(null)
   }
 }
 
@@ -39,6 +44,7 @@ async function login(username: string, password: string) {
     user.value = data.user
     localStorage.setItem('token', data.access_token)
     localStorage.setItem('user', JSON.stringify(data.user))
+    syncThemeForUser(data.user)
     return { success: true, message: '登录成功' }
   } catch (error) {
     const message = typeof error === 'string' ? error : '网络错误'
@@ -54,6 +60,7 @@ async function register(username: string, email: string, password: string, invit
     user.value = data.user
     localStorage.setItem('token', data.access_token)
     localStorage.setItem('user', JSON.stringify(data.user))
+    syncThemeForUser(data.user)
     return { success: true, message: '注册成功' }
   } catch (error) {
     const message = typeof error === 'string' ? error : '网络错误'
@@ -62,11 +69,15 @@ async function register(username: string, email: string, password: string, invit
 }
 
 async function refreshCurrentUser() {
-  if (!token.value) return null
+  if (!token.value) {
+    syncThemeForUser(null)
+    return null
+  }
   try {
     const currentUser = await getMe()
     user.value = currentUser
     localStorage.setItem('user', JSON.stringify(currentUser))
+    syncThemeForUser(currentUser)
     return currentUser
   } catch {
     clearAuthState()
@@ -79,6 +90,7 @@ function clearAuthState() {
   user.value = null
   localStorage.removeItem('token')
   localStorage.removeItem('user')
+  syncThemeForUser(null)
 }
 
 setUnauthorizedStateHandler(clearAuthState)
@@ -98,6 +110,7 @@ async function logout() {
 function setUser(userData: User) {
   user.value = userData
   localStorage.setItem('user', JSON.stringify(userData))
+  syncThemeForUser(userData)
 }
 
 // 导出状态和方法

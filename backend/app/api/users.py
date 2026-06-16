@@ -14,6 +14,7 @@ from app.models.comment import Comment
 from app.models.like import PostLike
 from app.schemas.user import (
     UserResponse,
+    UserPublicResponse,
     UserProfile,
     UserProfileUpdate,
     UserStatsResponse,
@@ -40,6 +41,13 @@ def user_response(user: User) -> UserResponse:
     return response
 
 
+def user_public_response(user: User) -> UserPublicResponse:
+    """构造他人资料的对外响应（最小披露，不含 email）"""
+    response = UserPublicResponse.model_validate(user)
+    response.avatar_url = signed_media_url(user.avatar_url)
+    return response
+
+
 def user_profile_response(user: User) -> UserProfile:
     response = UserProfile.model_validate(user)
     response.avatar_url = signed_media_url(user.avatar_url)
@@ -48,7 +56,7 @@ def user_profile_response(user: User) -> UserProfile:
 
 # ==================== API 路由 ====================
 
-@router.get("/users/{user_id}", response_model=UserResponse)
+@router.get("/users/{user_id}", response_model=UserPublicResponse)
 async def get_user_profile(
     user_id: UUID,
     current_user_id: UUID = Depends(get_current_user_id),
@@ -57,7 +65,7 @@ async def get_user_profile(
     """
     获取用户档案信息
 
-    返回用户的公开档案信息，包括头像、简介、生日、家庭角色等
+    返回用户的公开档案信息，包括头像、简介、生日、家庭角色等（不含邮箱）
     """
     del current_user_id
 
@@ -68,7 +76,7 @@ async def get_user_profile(
             detail="用户不存在",
         )
 
-    return user_response(user)
+    return user_public_response(user)
 
 
 @router.put("/users/{user_id}", response_model=UserProfile)

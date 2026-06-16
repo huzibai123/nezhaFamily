@@ -6,6 +6,7 @@ from datetime import date, datetime, time, timezone
 from pathlib import Path
 from typing import Iterable, List, Optional
 from uuid import UUID
+import mimetypes
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, Query, status
 from fastapi.responses import FileResponse
 from sqlalchemy import and_, delete, desc, func, or_, select
@@ -116,12 +117,23 @@ def _safe_original_filename(filename: str | None) -> str | None:
     return safe_name[:255]
 
 
+def _guess_serve_media_type(full_path: Path) -> str:
+    """按扩展名猜测响应 media_type，猜不到时退回通用二进制，降低浏览器嗅探风险。"""
+    guessed, _encoding = mimetypes.guess_type(full_path.name)
+    return guessed or "application/octet-stream"
+
+
 def _normalize_page(page: int, page_size: int) -> tuple[int, int]:
     if page < 1:
         page = 1
     if page_size < 1 or page_size > 100:
         page_size = 24
     return page, page_size
+
+
+def _escape_like(value: str) -> str:
+    """转义 LIKE/ILIKE 中的特殊字符，避免用户关键词中的 % _ \\ 被当作通配符。"""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _media_base_filters(
@@ -136,12 +148,12 @@ def _media_base_filters(
     filters = []
     keyword = q.strip() if q else ""
     if keyword:
-        like_keyword = f"%{keyword}%"
+        like_keyword = f"%{_escape_like(keyword)}%"
         filters.append(
             or_(
-                MediaFile.original_name.ilike(like_keyword),
-                MediaFile.file_path.ilike(like_keyword),
-                MediaFile.caption.ilike(like_keyword),
+                MediaFile.original_name.ilike(like_keyword, escape="\\"),
+                MediaFile.file_path.ilike(like_keyword, escape="\\"),
+                MediaFile.caption.ilike(like_keyword, escape="\\"),
             )
         )
     if media_type:
@@ -429,7 +441,11 @@ async def serve_signed_media_file(file_path: str, token: Optional[str] = None):
 
     if not full_path.exists() or not full_path.is_file():
         raise HTTPException(status_code=404, detail="文件不存在")
-    return FileResponse(str(full_path))
+    return FileResponse(
+        str(full_path),
+        media_type=_guess_serve_media_type(full_path),
+        content_disposition_type="inline",
+    )
 
 
 @router.get("/media/search", response_model=MediaSearchResponse)
@@ -834,7 +850,11 @@ async def serve_media_file(
 
     if not full_path.exists() or not full_path.is_file():
         raise HTTPException(status_code=404, detail="文件不存在")
-    return FileResponse(str(full_path))
+    return FileResponse(
+        str(full_path),
+        media_type=_guess_serve_media_type(full_path),
+        content_disposition_type="inline",
+    )
 
 
 @router.get("/media")

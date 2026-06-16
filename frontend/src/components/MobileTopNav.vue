@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Bell, CalendarDays, Home, Image, Images, Plus, Settings, UserCircle } from 'lucide-vue-next'
+import { Bell, CalendarDays, Home, Image, Images, Palette, Plus, Settings, UserCircle } from 'lucide-vue-next'
 import { useAuth } from '@/composables/useAuth'
 import FamilySeal from '@/components/FamilySeal.vue'
+import { useThemeSwitcher } from '@/composables/useThemeSwitcher'
 
 withDefaults(
   defineProps<{
@@ -16,6 +17,7 @@ withDefaults(
 )
 
 const { user } = useAuth()
+const { openThemeSwitcher } = useThemeSwitcher()
 
 const navItems = computed(() => [
   { label: '动态', to: '/', icon: Home },
@@ -30,21 +32,31 @@ const navItems = computed(() => [
 
 <template>
   <header class="mobile-top-nav sticky top-0 z-40 border-b border-[var(--border)] backdrop-blur-xl">
-    <div class="flex h-14 items-center justify-between px-4">
-      <RouterLink to="/" class="brand-link flex min-w-0 items-center gap-2.5">
-        <span class="grid h-8 w-8 shrink-0 place-items-center">
+    <div class="mobile-brand-row flex h-12 items-center justify-between gap-3 px-3.5">
+      <RouterLink to="/" class="brand-link flex min-w-0 items-center gap-2">
+        <span class="brand-mark grid h-8 w-8 shrink-0 place-items-center">
           <FamilySeal compact :label="title" :logo-url="logoUrl" />
         </span>
-        <span class="truncate text-base font-semibold text-[var(--text)]">{{ title }}</span>
+        <span class="brand-title truncate text-[15px] font-semibold leading-none text-[var(--text)]">{{ title }}</span>
       </RouterLink>
 
-      <RouterLink
-        to="/publish"
-        aria-label="发布记忆"
-        class="mobile-publish grid h-9 w-9 place-items-center rounded-lg bg-[var(--accent)] text-white hover:bg-[var(--accent-strong)] active:scale-[0.98]"
-      >
-        <Plus :size="19" stroke-width="2.1" aria-hidden="true" />
-      </RouterLink>
+      <div class="mobile-actions flex shrink-0 items-center gap-2">
+        <button
+          @click="openThemeSwitcher"
+          aria-label="主题"
+          class="grid h-8 w-8 place-items-center rounded-lg border border-[var(--border)] bg-[var(--surface-elevated)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent)] active:scale-[0.98]"
+        >
+          <Palette :size="16" stroke-width="2" aria-hidden="true" />
+        </button>
+
+        <RouterLink
+          to="/publish"
+          aria-label="发布记忆"
+          class="mobile-publish grid h-8 w-8 place-items-center rounded-lg bg-[var(--accent)] text-white hover:bg-[var(--accent-strong)] active:scale-[0.98]"
+        >
+          <Plus :size="18" stroke-width="2.1" aria-hidden="true" />
+        </RouterLink>
+      </div>
     </div>
 
     <nav
@@ -55,10 +67,10 @@ const navItems = computed(() => [
         v-for="item in navItems"
         :key="item.to"
         :to="item.to"
-        class="mobile-nav-link flex h-12 min-w-[3.8rem] flex-1 flex-col items-center justify-center gap-0.5 rounded-t-lg px-2 text-[11px] font-medium text-[var(--text-muted)] hover:bg-[var(--surface-elevated)] hover:text-[var(--text-secondary)]"
+        class="mobile-nav-link flex h-11 min-w-[3.4rem] flex-1 flex-col items-center justify-center gap-0.5 rounded-t-lg px-2 text-[10px] font-medium text-[var(--text-muted)] hover:bg-[var(--surface-elevated)] hover:text-[var(--text-secondary)]"
         active-class="mobile-nav-link-active !text-[var(--accent)]"
       >
-        <component :is="item.icon" :size="17" stroke-width="1.9" aria-hidden="true" />
+        <component :is="item.icon" :size="16" stroke-width="1.9" aria-hidden="true" />
         <span class="truncate">{{ item.label }}</span>
       </RouterLink>
     </nav>
@@ -67,10 +79,29 @@ const navItems = computed(() => [
 
 <style scoped>
 .mobile-top-nav {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 252, 0.95), rgba(246, 241, 232, 0.9)),
-    rgba(255, 255, 252, 0.9);
-  box-shadow: 0 10px 28px rgba(47, 39, 35, 0.08);
+  background: var(--surface-panel);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.08);
+}
+
+.mobile-brand-row {
+  min-width: 0;
+}
+
+.brand-link {
+  max-width: min(58vw, 14rem);
+  overflow: hidden;
+}
+
+.brand-mark {
+  filter: drop-shadow(0 5px 12px rgba(47, 39, 35, 0.1));
+}
+
+.brand-title {
+  letter-spacing: -0.01em;
+}
+
+.mobile-actions {
+  min-width: 4.5rem;
 }
 
 .brand-link,
@@ -122,6 +153,31 @@ const navItems = computed(() => [
 .mobile-nav-link-active::after {
   opacity: 1;
   transform: translateX(-50%) scaleX(1);
+}
+
+@media (max-width: 380px) {
+  .mobile-brand-row {
+    padding-left: 0.75rem;
+    padding-right: 0.75rem;
+  }
+
+  .brand-link {
+    gap: 0.4rem;
+    max-width: min(52vw, 11rem);
+  }
+
+  .brand-mark {
+    height: 1.85rem;
+    width: 1.85rem;
+  }
+
+  .brand-title {
+    font-size: 0.86rem;
+  }
+
+  .mobile-actions {
+    gap: 0.4rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

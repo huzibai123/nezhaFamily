@@ -47,3 +47,7 @@ class CommentListResponse(BaseModel):
     """评论列表响应"""
     comments: List[CommentResponse]
     total: int
+    # 以下分页字段为可选，默认值保证未接入分页的旧前端可直接忽略。
+    page: int = 1
+    page_size: int = 100
+    has_more: bool = False

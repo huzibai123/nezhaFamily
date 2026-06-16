@@ -41,7 +41,7 @@ withDefaults(
 }
 
 .family-seal-compact {
-  width: 3rem;
+  width: 100%;
 }
 
 .seal-ring {
@@ -156,14 +156,15 @@ withDefaults(
 }
 
 .family-seal-compact .seal-logo-ring {
-  border-radius: 12px;
-  inset: 0.22rem;
+  border-radius: 9px;
+  box-shadow: 0 8px 18px rgba(63, 45, 36, 0.12);
+  inset: 0.12rem;
 }
 
 .family-seal-compact .seal-logo {
-  border-radius: 10px;
-  height: calc(100% - 0.64rem);
-  width: calc(100% - 0.64rem);
+  border-radius: 8px;
+  height: calc(100% - 0.34rem);
+  width: calc(100% - 0.34rem);
 }
 
 @keyframes seal-ring-turn {

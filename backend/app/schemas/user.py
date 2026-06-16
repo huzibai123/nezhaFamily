@@ -11,6 +11,9 @@ from uuid import UUID
 from app.core.password_policy import validate_password_strength
 
 
+ALLOWED_THEME_IDS = {"default", "classic", "timeline", "grid", "list", "warm"}
+
+
 class UserBase(BaseModel):
     """用户基础字段"""
     username: str = Field(..., min_length=2, max_length=50, description="用户名")
@@ -55,6 +58,22 @@ class UserResponse(UserBase):
     bio: Optional[str] = None
     birthday: Optional[date] = None
     role_in_family: Optional[str] = None
+    preferred_theme: str = Field(default="default", max_length=40)
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class UserPublicResponse(BaseModel):
+    """他人资料的对外响应（最小披露，不含 email）"""
+    id: UUID
+    username: str
+    role: str
+    avatar_url: Optional[str] = None
+    bio: Optional[str] = None
+    birthday: Optional[date] = None
+    role_in_family: Optional[str] = None
+    preferred_theme: str = Field(default="default", max_length=40)
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -75,6 +94,16 @@ class UserProfileUpdate(BaseModel):
     bio: Optional[str] = Field(None, max_length=500, description="个人简介")
     birthday: Optional[date] = Field(None, description="生日")
     role_in_family: Optional[str] = Field(None, max_length=50, description="家庭角色")
+    preferred_theme: Optional[str] = Field(None, max_length=40, description="个人主题偏好")
+
+    @field_validator("preferred_theme")
+    @classmethod
+    def validate_preferred_theme(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        if v not in ALLOWED_THEME_IDS:
+            raise ValueError("主题不存在")
+        return v
 
 
 class UserStatsResponse(BaseModel):

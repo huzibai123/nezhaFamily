@@ -261,11 +261,17 @@ const isOwn = computed(() => user.value?.id === profile.value?.id)
 const profileInitial = computed(() => profile.value?.username.charAt(0).toUpperCase() || '?')
 const profileAvatarUrl = computed(() => profile.value?.avatar_url ? mediaUrl(profile.value.avatar_url) : '')
 const editAvatarPreview = computed(() => editForm.avatar_url ? mediaUrl(editForm.avatar_url) : '')
-const profileSections = computed(() => [
-  { title: profile.value?.role_in_family || '未设置', body: '家庭角色', meta: 'Role' },
-  { title: profile.value?.birthday || '未设置', body: '生日', meta: 'Birthday' },
-  { title: profile.value?.email || '未设置', body: '登录邮箱', meta: 'Email' },
-])
+const profileSections = computed(() => {
+  const sections = [
+    { title: profile.value?.role_in_family || '未设置', body: '家庭角色', meta: 'Role' },
+    { title: profile.value?.birthday || '未设置', body: '生日', meta: 'Birthday' },
+  ]
+  // 登录邮箱仅本人可见：公开档案接口 /users/{id} 不再返回他人 email
+  if (isOwn.value) {
+    sections.push({ title: user.value?.email || '未设置', body: '登录邮箱', meta: 'Email' })
+  }
+  return sections
+})
 const quickSections = computed(() => [
   { title: '发布新记忆', body: '记录今天的照片或文字', meta: 'Create' },
   { title: '查看家庭相册', body: '浏览整理好的照片集合', meta: 'Albums' },

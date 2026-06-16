@@ -136,6 +136,8 @@ async def is_token_revoked(request: Request, payload: dict) -> bool:
     try:
         return bool(await client.exists(_revoked_token_key(_token_jti(payload))))
     except RedisError as exc:
+        # Redis 不可用时普通鉴权有意 fail-open（可用性优先），
+        # 登出黑名单可能短暂失效，但避免因 Redis 故障导致全站无法访问。
         logger.warning("Token 撤销检查 Redis 不可用，跳过黑名单检查: %s", exc)
         return False
 

@@ -112,7 +112,7 @@ docker-compose down [-v]        # -v 连数据卷一起删（重置数据库）
 `db/session.py` 的 `get_db()` 依赖：每个请求开一个 `AsyncSession`，异常时自动 rollback，成功提交由路由显式 `await db.commit()` 控制。数据库 URL 统一来自 `core/config.py` 的 `settings.DATABASE_URL`；API、Alembic 和 Celery 任务应保持同一来源。
 
 ### 认证
-- JWT 载荷的用户标识 claim 是 **`user_id`（字符串 UUID），不是 `sub`**；`create_access_token`/`get_current_user_id`（在 `core/security.py`）配套使用。请求头 `Authorization: Bearer <token>`，默认有效期 7 天。
+- JWT 载荷的用户标识 claim 是 **`user_id`（字符串 UUID），不是 `sub`**；`create_access_token`/`get_current_user_id`（在 `core/security.py`）配套使用。请求头 `Authorization: Bearer <token>`，默认有效期 60 分钟（`ACCESS_TOKEN_EXPIRE_MINUTES`，可经 `.env` 覆盖）。
 - 鉴权依赖有**两份重复实现**：`core/security.py` 和 `core/dependencies.py` 各有一个 `get_current_user`。**现有路由都从 `core.security` 导入**（如 `posts.py`），新代码请保持一致；`dependencies.py` 里还有 `get_current_active_admin`（管理员守卫）。
 - 端点总览（均在 `/api/v1` 下）：auth `register/login/me/logout`；posts `CRUD /posts`；comments `/posts/{id}/comments`、`/comments/{id}`；likes `/posts/{id}/like`、`/comments/{id}/like`；users `/users/{id}`(+`/posts`/`/stats`)；media `/upload`；albums `/albums...`；events `/events...`。（注意 auth 与 users 都定义了 `GET /users/{user_id}`，存在重叠。）
 

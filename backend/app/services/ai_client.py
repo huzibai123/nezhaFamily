@@ -13,11 +13,23 @@ AIWireAPI = Literal["chat_completions", "responses"]
 
 
 class AIProviderError(Exception):
-    """模型供应商调用失败。"""
+    """模型供应商调用失败。
 
-    def __init__(self, message: str, *, status_code: Optional[int] = None) -> None:
+    message 为对外可暴露/落库的提示，只含状态码 + 通用中文，不含上游响应正文。
+    detail 为仅供内部判断的细节（如上游错误片段），不会进入 str(exc)，
+    用于诸如 responses fallback 的判定，避免半盲 SSRF 数据外泄。
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: Optional[int] = None,
+        detail: Optional[str] = None,
+    ) -> None:
         super().__init__(message)
         self.status_code = status_code
+        self.detail = detail
 
 
 @dataclass
@@ -114,7 +126,8 @@ class OpenAICompatibleClient:
         try:
             return await self._post_json(url, payload)
         except AIProviderError as exc:
-            if exc.status_code != 400 or "max_output_tokens" not in str(exc):
+            # 用不对外的 detail 字段判断是否触发 fallback，避免把上游正文回显给用户
+            if exc.status_code != 400 or "max_output_tokens" not in (exc.detail or ""):
                 raise
             fallback_payload = dict(payload)
             fallback_payload.pop("max_output_tokens", None)
@@ -136,13 +149,21 @@ class OpenAICompatibleClient:
             raise AIProviderError(f"模型请求失败: {exc}") from exc
 
         if response.status_code >= 400:
-            message = _extract_error_message(response)
-            raise AIProviderError(message, status_code=response.status_code)
+            message = _generic_http_error_message(response.status_code)
+            raise AIProviderError(
+                message,
+                status_code=response.status_code,
+                detail=_extract_error_detail(response),
+            )
 
         try:
             return response.json()
         except ValueError as exc:
-            raise AIProviderError(_non_json_message(response), status_code=response.status_code) from exc
+            raise AIProviderError(
+                _non_json_message(response),
+                status_code=response.status_code,
+                detail=_extract_error_detail(response),
+            ) from exc
 
 
 def _result_from_content(content: Any, raw: dict[str, Any]) -> AIChatResult:
@@ -254,7 +275,19 @@ def _extract_responses_content(data: dict[str, Any]) -> str:
     raise AIProviderError("模型响应格式不兼容")
 
 
-def _extract_error_message(response: httpx.Response) -> str:
+def _generic_http_error_message(status_code: int) -> str:
+    """对外/落库的错误提示：只含状态码 + 通用中文，不回显上游响应正文。"""
+    if 400 <= status_code < 500:
+        category = "请求被拒绝（4xx）"
+    elif 500 <= status_code < 600:
+        category = "上游服务异常（5xx）"
+    else:
+        category = "上游返回异常"
+    return f"模型服务返回 HTTP {status_code}：{category}"
+
+
+def _extract_error_detail(response: httpx.Response) -> Optional[str]:
+    """提取仅供内部判断的上游错误片段（如 max_output_tokens），不对外暴露。"""
     try:
         data = response.json()
         error = data.get("error")
@@ -267,14 +300,10 @@ def _extract_error_message(response: httpx.Response) -> str:
                 return data[key]
     except ValueError:
         pass
-    content_type = _response_content_type(response)
     text = getattr(response, "text", "")
-    if isinstance(text, str):
-        text = " ".join(text.split())[:160]
-    if text and "html" not in content_type.lower():
-        return f"模型服务返回 HTTP {response.status_code}: {text}"
-    suffix = f"（{content_type}）" if content_type else ""
-    return f"模型服务返回 HTTP {response.status_code}{suffix}"
+    if isinstance(text, str) and text.strip():
+        return " ".join(text.split())[:200]
+    return None
 
 
 def _non_json_message(response: httpx.Response) -> str:

@@ -4,7 +4,10 @@ import DesktopSidebar from '@/components/DesktopSidebar.vue'
 import FamilyDecorLayer from '@/components/FamilyDecorLayer.vue'
 import MediaSearchPanel from '@/components/MediaSearchPanel.vue'
 import MobileTopNav from '@/components/MobileTopNav.vue'
+import ThemeSwitcher from '@/components/ThemeSwitcher.vue'
 import { useFamilySettings } from '@/composables/useFamilySettings'
+import { useTheme } from '@/composables/useTheme'
+import { useThemeSwitcher } from '@/composables/useThemeSwitcher'
 
 const props = withDefaults(
   defineProps<{
@@ -24,13 +27,42 @@ const props = withDefaults(
 const slots = useSlots()
 const hasRightRail = computed(() => Boolean(slots.right))
 const { familyName: configuredFamilyName, logoUrl } = useFamilySettings()
+const { currentTheme } = useTheme()
+const { isThemeSwitcherOpen, closeThemeSwitcher } = useThemeSwitcher()
 const displayFamilyName = computed(() => props.familyName || configuredFamilyName.value)
+const shouldShowRightRail = computed(() => {
+  const mode = currentTheme.value.layoutMode
+  if (mode === 'single-dark' || mode === 'minimal' || mode === 'timeline' || mode === 'masonry' || mode === 'grid') {
+    return false
+  }
+  return hasRightRail.value
+})
+
+const shellLayoutClass = computed(() => {
+  const mode = currentTheme.value.layoutMode
+  if (mode === 'single-dark' || mode === 'minimal' || mode === 'grid' || mode === 'timeline' || mode === 'masonry') {
+    return 'lg:grid-cols-[minmax(0,1fr)]'
+  }
+  return 'lg:grid-cols-[16rem_minmax(0,1fr)] xl:grid-cols-[17rem_minmax(0,1fr)]'
+})
+
+const shouldShowSidebar = computed(() => {
+  const mode = currentTheme.value.layoutMode
+  return mode === 'default'
+})
+
+const useImmersiveLayout = computed(() => {
+  const mode = currentTheme.value.layoutMode
+  return mode === 'single-dark' || mode === 'minimal' || mode === 'timeline' || mode === 'masonry' || mode === 'grid'
+})
+
 const shellWidthClass = computed(() => {
   if (props.contentWidth === 'wide') return 'max-w-[92rem]'
-  return hasRightRail.value ? 'max-w-[76rem]' : 'max-w-[58rem]'
+  return shouldShowRightRail.value ? 'max-w-[76rem]' : 'max-w-[58rem]'
 })
+
 const contentGridClass = computed(() => {
-  if (!hasRightRail.value) {
+  if (!shouldShowRightRail.value) {
     return props.contentWidth === 'wide' ? 'max-w-[92rem]' : 'max-w-[58rem]'
   }
   if (props.contentWidth === 'wide') {
@@ -41,16 +73,27 @@ const contentGridClass = computed(() => {
 </script>
 
 <template>
-  <div class="family-shell min-h-dvh text-[var(--text)]">
+  <div class="family-shell min-h-dvh text-[var(--text)]" :class="`theme-${currentTheme.layoutMode}`">
     <FamilyDecorLayer class="family-shell-decor" />
-    <MobileTopNav class="lg:hidden" :title="displayFamilyName" :logo-url="logoUrl" />
+    <!-- 移动端始终显示，桌面端在隐藏侧边栏的主题下也显示，保证导航和主题切换可用 -->
+    <MobileTopNav
+      :class="shouldShowSidebar ? 'lg:hidden' : ''"
+      :title="displayFamilyName"
+      :logo-url="logoUrl"
+    />
 
-    <div class="mx-auto grid min-h-dvh w-full lg:grid-cols-[16rem_minmax(0,1fr)] xl:grid-cols-[17rem_minmax(0,1fr)]">
-      <DesktopSidebar class="hidden lg:flex" :family-name="displayFamilyName" :logo-url="logoUrl" />
+    <div class="mx-auto grid min-h-dvh w-full" :class="shellLayoutClass">
+      <DesktopSidebar
+        v-if="shouldShowSidebar"
+        class="hidden lg:flex"
+        :family-name="displayFamilyName"
+        :logo-url="logoUrl"
+      />
 
       <div class="min-w-0">
         <main class="shell-main mx-auto w-full px-4 pb-16 pt-5 sm:px-6 lg:px-8 lg:py-8 xl:px-10">
           <div
+            v-if="!useImmersiveLayout"
             class="mx-auto mb-5 w-full"
             :class="shellWidthClass"
           >
@@ -58,7 +101,7 @@ const contentGridClass = computed(() => {
           </div>
 
           <div
-            v-if="pageTitle || pageDescription || $slots.header"
+            v-if="!useImmersiveLayout && (pageTitle || pageDescription || $slots.header)"
             class="mx-auto mb-6 w-full"
             :class="shellWidthClass"
           >
@@ -82,13 +125,19 @@ const contentGridClass = computed(() => {
               <slot />
             </section>
 
-            <aside v-if="hasRightRail" class="hidden min-w-0 lg:sticky lg:top-8 lg:block lg:self-start">
+            <aside
+              v-if="shouldShowRightRail"
+              data-testid="app-right-rail"
+              class="hidden min-w-0 lg:sticky lg:top-8 lg:block lg:self-start"
+            >
               <slot name="right" />
             </aside>
           </div>
         </main>
       </div>
     </div>
+
+    <ThemeSwitcher v-if="isThemeSwitcherOpen" @close="closeThemeSwitcher" />
   </div>
 </template>
 
@@ -97,14 +146,12 @@ const contentGridClass = computed(() => {
   isolation: isolate;
   overflow: hidden;
   position: relative;
-  background:
-    linear-gradient(180deg, rgba(246, 241, 232, 0.92), rgba(232, 224, 210, 0.78)),
-    linear-gradient(100deg, rgba(201, 67, 47, 0.08), rgba(255, 255, 255, 0) 42%, rgba(45, 108, 104, 0.08)),
-    transparent;
+  background: var(--surface);
 }
 
-.family-shell::before,
-.family-shell::after {
+/* 环形 + 丝带装饰仅在 default 主题下显示，其他主题保持简洁 */
+.family-shell.theme-default::before,
+.family-shell.theme-default::after {
   content: '';
   pointer-events: none;
   position: fixed;
@@ -116,11 +163,11 @@ const contentGridClass = computed(() => {
   z-index: 1;
 }
 
-.family-shell::before {
+.family-shell.theme-default::before {
   animation: ring-drift 16s ease-in-out infinite;
   background:
-    conic-gradient(from 16deg, rgba(201, 67, 47, 0.14), rgba(45, 108, 104, 0.14), rgba(66, 81, 132, 0.1), rgba(201, 67, 47, 0.14));
-  border: 1px solid rgba(49, 38, 33, 0.1);
+    conic-gradient(from 16deg, var(--accent-soft), rgba(45, 108, 104, 0.12), rgba(66, 81, 132, 0.08), var(--accent-soft));
+  border: 1px solid var(--border);
   border-radius: 999px;
   height: min(26vw, 16rem);
   opacity: 0.26;
@@ -129,10 +176,10 @@ const contentGridClass = computed(() => {
   width: min(26vw, 16rem);
 }
 
-.family-shell::after {
+.family-shell.theme-default::after {
   animation: ribbon-breathe 13s ease-in-out infinite alternate;
   background:
-    linear-gradient(92deg, rgba(201, 67, 47, 0), rgba(201, 67, 47, 0.12), rgba(45, 108, 104, 0.1), rgba(201, 67, 47, 0));
+    linear-gradient(92deg, transparent, var(--accent-soft), rgba(45, 108, 104, 0.08), transparent);
   border-radius: 999px;
   bottom: 12vh;
   filter: blur(0.5px);
@@ -143,8 +190,29 @@ const contentGridClass = computed(() => {
   width: min(34rem, 58vw);
 }
 
+/* 沉浸式深色：整体深色渐晕背景（与 FamilyDecorLayer 协同） */
+.family-shell.theme-single-dark {
+  background:
+    radial-gradient(circle at 82% 8%, rgba(124, 158, 217, 0.16), transparent 30rem),
+    radial-gradient(circle at 18% 88%, rgba(72, 219, 251, 0.08), transparent 28rem),
+    var(--surface);
+  color-scheme: dark;
+}
+
+.family-shell.theme-grid .shell-main {
+  padding-left: var(--page-padding, 1rem);
+  padding-right: var(--page-padding, 1rem);
+}
+
+.family-shell.theme-minimal .shell-main {
+  padding-top: clamp(2rem, 6vw, 5rem);
+}
+
 .shell-main {
   animation: shell-content-in 420ms ease-out;
+  /* 让主内容区的左右内边距也响应主题（默认 24px） */
+  padding-left: var(--page-padding, 24px);
+  padding-right: var(--page-padding, 24px);
 }
 
 @keyframes shell-content-in {
@@ -181,8 +249,8 @@ const contentGridClass = computed(() => {
 
 @media (prefers-reduced-motion: reduce) {
   .shell-main,
-  .family-shell::before,
-  .family-shell::after {
+  .family-shell.theme-default::before,
+  .family-shell.theme-default::after {
     animation: none;
   }
 }

@@ -2,12 +2,19 @@
 import { computed, onBeforeUnmount, onMounted, ref, type CSSProperties } from 'vue'
 import type { ThemeOrnamentAsset } from '@/api/admin'
 import { useFamilySettings } from '@/composables/useFamilySettings'
+import { useTheme } from '@/composables/useTheme'
 import { mediaUrl } from '@/utils/media'
 
 defineOptions({ inheritAttrs: false })
 
 const { backgroundImage, themeAssets } = useFamilySettings()
+const { currentTheme } = useTheme()
 const petLayerRef = ref<HTMLElement | null>(null)
+const isDarkTheme = computed(() => currentTheme.value.appearance === 'dark')
+const layoutMode = computed(() => currentTheme.value.layoutMode)
+// 仅 default 主题保留完整的家庭装饰层（背景图 / scrim / 宠物巡游）
+// 其他主题用更轻量的覆盖层取代，避免视觉嘈杂
+const isDefaultDecor = computed(() => layoutMode.value === 'default')
 
 const enabledOrnaments = computed(() =>
   themeAssets.value.ornaments.filter(asset => asset.enabled && asset.url)
@@ -35,9 +42,11 @@ const anchorRanges: Record<ThemeOrnamentAsset['position'], PatrolRange> = {
 
 let pointerQuery: MediaQueryList | null = null
 let motionQuery: MediaQueryList | null = null
+let desktopDecorQuery: MediaQueryList | null = null
 let proximityFrame = 0
 let lastPointerEvent: PointerEvent | null = null
 let canTrackPointer = false
+const canShowPetLayer = ref(false)
 
 function createPatrolStyle(ornament: ThemeOrnamentAsset, index: number): PatrolStyle {
   const seed = hashString(`${ornament.id}:${ornament.url}:${index}`)
@@ -96,6 +105,14 @@ function syncPointerTracking() {
   }
 }
 
+function syncDesktopDecor() {
+  canShowPetLayer.value = Boolean(desktopDecorQuery?.matches)
+
+  if (!canShowPetLayer.value) {
+    clearPetProximity()
+  }
+}
+
 function applyPetProximity() {
   proximityFrame = 0
 
@@ -132,11 +149,14 @@ function queuePetProximity(event: PointerEvent) {
 onMounted(() => {
   pointerQuery = window.matchMedia('(hover: hover) and (pointer: fine)')
   motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+  desktopDecorQuery = window.matchMedia('(min-width: 1024px)')
 
   syncPointerTracking()
+  syncDesktopDecor()
 
   pointerQuery.addEventListener('change', syncPointerTracking)
   motionQuery.addEventListener('change', syncPointerTracking)
+  desktopDecorQuery.addEventListener('change', syncDesktopDecor)
   window.addEventListener('pointermove', queuePetProximity, { passive: true })
   window.addEventListener('pointerleave', clearPetProximity)
   window.addEventListener('blur', clearPetProximity)
@@ -145,6 +165,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   pointerQuery?.removeEventListener('change', syncPointerTracking)
   motionQuery?.removeEventListener('change', syncPointerTracking)
+  desktopDecorQuery?.removeEventListener('change', syncDesktopDecor)
   window.removeEventListener('pointermove', queuePetProximity)
   window.removeEventListener('pointerleave', clearPetProximity)
   window.removeEventListener('blur', clearPetProximity)
@@ -156,18 +177,74 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div v-bind="$attrs" class="family-decor-layer" aria-hidden="true">
+  <!-- default 主题：保留完整的家庭装饰层（背景图 + scrim） -->
+  <div
+    v-if="isDefaultDecor"
+    v-bind="$attrs"
+    class="family-decor-layer"
+    aria-hidden="true"
+  >
     <div
       v-if="backgroundImage"
       class="family-decor-layer__background"
       :style="{ backgroundImage: `url('${mediaUrl(backgroundImage)}')` }"
     ></div>
-    <div class="family-decor-layer__scrim"></div>
+    <div
+      class="family-decor-layer__scrim"
+      :class="{ 'family-decor-layer__scrim--dark': isDarkTheme }"
+    ></div>
   </div>
 
+  <!-- 沉浸式深色：极简，仅留微妙渐变光晕 -->
+  <div
+    v-else-if="layoutMode === 'single-dark'"
+    v-bind="$attrs"
+    class="theme-decor theme-decor--immersive"
+    aria-hidden="true"
+  ></div>
+
+  <!-- 极简日式：纯净留白，无装饰 -->
+  <div
+    v-else-if="layoutMode === 'minimal'"
+    v-bind="$attrs"
+    class="theme-decor theme-decor--minimal"
+    aria-hidden="true"
+  ></div>
+
+  <!-- 家书杂志：轻纸张纹理 -->
+  <div
+    v-else-if="layoutMode === 'masonry'"
+    v-bind="$attrs"
+    class="theme-decor theme-decor--masonry"
+    aria-hidden="true"
+  ></div>
+
+  <div
+    v-else-if="layoutMode === 'grid'"
+    v-bind="$attrs"
+    class="theme-decor theme-decor--grid"
+    aria-hidden="true"
+  ></div>
+
+  <div
+    v-else-if="layoutMode === 'timeline'"
+    v-bind="$attrs"
+    class="theme-decor theme-decor--timeline"
+    aria-hidden="true"
+  ></div>
+
+  <!-- 其他主题：极淡装饰底色 -->
+  <div
+    v-else
+    v-bind="$attrs"
+    class="theme-decor theme-decor--soft"
+    aria-hidden="true"
+  ></div>
+
+  <!-- 宠物巡游：仅 default 主题启用，避免在极简主题中分散注意力 -->
   <Teleport to="body">
     <div
-      v-if="floatingOrnaments.length"
+      v-if="isDefaultDecor && canShowPetLayer && floatingOrnaments.length"
       ref="petLayerRef"
       class="family-decor-layer__pet-field"
       aria-hidden="true"
@@ -191,6 +268,54 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+/* 主题专属装饰层（非 default 主题使用） */
+.theme-decor {
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  position: fixed;
+  z-index: 0;
+}
+
+/* 沉浸式深色：双角落柔光晕染，呼应 single-dark 的星空感 */
+.theme-decor--immersive {
+  background:
+    radial-gradient(circle at 80% 20%, rgba(124, 158, 217, 0.08), transparent 50%),
+    radial-gradient(circle at 20% 80%, rgba(72, 219, 251, 0.05), transparent 50%);
+}
+
+/* 极简日式：仅一层薄白底，最大化留白 */
+.theme-decor--minimal {
+  background: var(--surface, #ffffff);
+}
+
+/* 家书杂志：SVG 噪点纹理模拟轻纸张质感 */
+.theme-decor--masonry {
+  background-color: var(--surface, #f7f5f0);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.045'/%3E%3C/svg%3E");
+}
+
+.theme-decor--grid {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.30), transparent 12rem),
+    radial-gradient(circle at 0% 0%, rgba(13, 112, 126, 0.08), transparent 24rem),
+    var(--surface);
+}
+
+.theme-decor--timeline {
+  background:
+    linear-gradient(90deg, transparent calc(50% - 1px), rgba(40, 109, 132, 0.10) 50%, transparent calc(50% + 1px)),
+    radial-gradient(circle at 50% 8%, rgba(111, 169, 140, 0.12), transparent 28rem),
+    var(--surface);
+}
+
+/* 网格 / 时间线：最淡的角落渐晕，几乎不可见但增强层次 */
+.theme-decor--soft {
+  background:
+    radial-gradient(circle at 12% 8%, var(--accent-soft, rgba(0, 0, 0, 0.04)), transparent 38%),
+    radial-gradient(circle at 88% 92%, var(--accent-soft, rgba(0, 0, 0, 0.04)), transparent 42%);
+}
+
 .family-decor-layer {
   inset: 0;
   overflow: hidden;
@@ -203,18 +328,25 @@ onBeforeUnmount(() => {
   background-size: cover;
   filter: saturate(0.96) contrast(0.94);
   inset: 0;
-  opacity: 0.28;
+  opacity: 0.16;
   position: absolute;
 }
 
 .family-decor-layer__scrim {
   background:
-    linear-gradient(180deg, rgba(246, 241, 232, 0.88), rgba(232, 224, 210, 0.62)),
-    radial-gradient(circle at 18% 12%, rgba(201, 67, 47, 0.1), transparent 32%),
-    radial-gradient(circle at 86% 24%, rgba(45, 108, 104, 0.12), transparent 30%),
-    radial-gradient(circle at 62% 88%, rgba(66, 81, 132, 0.1), transparent 34%);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.54), rgba(255, 255, 255, 0.22)),
+    radial-gradient(circle at 18% 12%, var(--accent-soft), transparent 32%),
+    radial-gradient(circle at 86% 24%, rgba(45, 108, 104, 0.08), transparent 30%),
+    radial-gradient(circle at 62% 88%, rgba(66, 81, 132, 0.07), transparent 34%);
   inset: 0;
   position: absolute;
+}
+
+.family-decor-layer__scrim--dark {
+  background:
+    linear-gradient(180deg, rgba(10, 11, 14, 0.88), rgba(10, 11, 14, 0.74)),
+    radial-gradient(circle at 18% 12%, rgba(124, 158, 217, 0.12), transparent 32%),
+    radial-gradient(circle at 86% 24%, rgba(72, 219, 251, 0.08), transparent 30%);
 }
 
 .family-decor-layer__pet-field {
@@ -306,7 +438,7 @@ onBeforeUnmount(() => {
     drop-shadow(0 0 16px rgba(255, 210, 120, 0.34));
 }
 
-@media (min-width: 768px) {
+@media (min-width: 1024px) {
   .family-decor-layer__pet {
     display: block;
   }

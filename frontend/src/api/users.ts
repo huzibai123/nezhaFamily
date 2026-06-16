@@ -4,11 +4,12 @@ import type { Post } from './posts'
 export interface UserProfile {
   id: string
   username: string
-  email: string
+  email?: string
   avatar_url?: string | null
   bio?: string
   birthday?: string
   role_in_family?: string
+  preferred_theme?: string
   created_at: string
 }
 

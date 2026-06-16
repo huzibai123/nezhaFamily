@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     # JWT 配置
     SECRET_KEY: str = "CHANGE_THIS_IN_PRODUCTION"  # 生产环境必须修改
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60  # =60 分钟
 
     # 代理配置
     TRUSTED_PROXY_COUNT: int = 0
@@ -100,6 +100,7 @@ class Settings(BaseSettings):
     # 邀请码配置
     INVITE_CODE_LENGTH: int = 8
     INVITE_CODE_EXPIRES_DAYS: int = 30
+    INVITE_CODE_MAX_USES: int = 20  # 单个邀请码最多可用于多少次注册
 
     @field_validator("ENVIRONMENT")
     @classmethod

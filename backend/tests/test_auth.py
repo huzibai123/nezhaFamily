@@ -465,7 +465,8 @@ async def test_get_other_user_profile_does_not_expose_invite_code(
     assert response.status_code == 200
     data = response.json()
     assert data["username"] == "testadmin"
-    assert data["email"] == "admin@test.com"
+    # 邮箱最小披露：他人公开档案（UserPublicResponse）不再返回 email
+    assert "email" not in data
     assert "invite_code" not in data
     assert "invited_by" not in data
 

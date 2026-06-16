@@ -161,10 +161,23 @@ async def create_comment(
 @router.get("/posts/{post_id}/comments", response_model=CommentListResponse)
 async def get_comments(
     post_id: UUID,
+    page: int = 1,
+    page_size: int = 100,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """获取帖子的评论列表（包含嵌套回复）"""
+    """获取帖子的评论列表（包含嵌套回复）
+
+    仅对顶层评论分页，回复始终随其所属顶层评论一起返回。``page_size`` 默认较大，
+    未传分页参数的旧前端可按原样使用：``total`` 仍为全部评论数（含回复），与帖子
+    评论计数保持一致。
+    """
+    if page < 1:
+        page = 1
+    if page_size < 1 or page_size > 200:
+        page_size = 100
+    offset = (page - 1) * page_size
+
     # 验证帖子是否存在
     post_query = select(Post).where(Post.id == post_id)
     post_result = await db.execute(post_query)
@@ -173,20 +186,55 @@ async def get_comments(
     if not post:
         raise HTTPException(status_code=404, detail="帖子不存在")
 
-    # 查询所有评论（包括回复）
-    query = select(Comment).where(Comment.post_id == post_id).order_by(Comment.created_at)
-    result = await db.execute(query)
-    all_comments = result.scalars().all()
+    # 全部评论数（含回复），保持与帖子评论计数一致，供旧前端直接使用。
+    total_result = await db.execute(
+        select(func.count()).select_from(Comment).where(Comment.post_id == post_id)
+    )
+    total = total_result.scalar() or 0
+
+    # 顶层评论总数，用于计算是否还有下一页。
+    top_total_result = await db.execute(
+        select(func.count())
+        .select_from(Comment)
+        .where(Comment.post_id == post_id, Comment.parent_id.is_(None))
+    )
+    top_total = top_total_result.scalar() or 0
+
+    # 仅对顶层评论分页
+    top_level_query = (
+        select(Comment)
+        .where(Comment.post_id == post_id, Comment.parent_id.is_(None))
+        .order_by(Comment.created_at)
+        .offset(offset)
+        .limit(page_size)
+    )
+    top_level_result = await db.execute(top_level_query)
+    top_level_rows = list(top_level_result.scalars().all())
+
+    if not top_level_rows:
+        return CommentListResponse(
+            comments=[],
+            total=total,
+            page=page,
+            page_size=page_size,
+            has_more=(offset + len(top_level_rows)) < top_total,
+        )
+
+    # 加载本页顶层评论对应的回复
+    top_level_ids = [c.id for c in top_level_rows]
+    replies_result = await db.execute(
+        select(Comment)
+        .where(Comment.parent_id.in_(top_level_ids))
+        .order_by(Comment.created_at)
+    )
+    reply_rows = list(replies_result.scalars().all())
+    all_comments = top_level_rows + reply_rows
 
     # 获取作者信息
     author_ids = list(set(c.author_id for c in all_comments))
-    if author_ids:
-        authors_query = select(User).where(User.id.in_(author_ids))
-        authors_result = await db.execute(authors_query)
-        authors = {author.id: author for author in authors_result.scalars().all()}
-    else:
-        authors = {}
-        return CommentListResponse(comments=[], total=0)
+    authors_query = select(User).where(User.id.in_(author_ids))
+    authors_result = await db.execute(authors_query)
+    authors = {author.id: author for author in authors_result.scalars().all()}
 
     # 获取点赞信息
     comment_ids = [c.id for c in all_comments]
@@ -252,7 +300,10 @@ async def get_comments(
 
     return CommentListResponse(
         comments=top_level_comments,
-        total=len(all_comments),
+        total=total,
+        page=page,
+        page_size=page_size,
+        has_more=(offset + len(top_level_rows)) < top_total,
     )
 
 

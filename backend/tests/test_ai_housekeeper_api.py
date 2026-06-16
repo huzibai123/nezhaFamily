@@ -27,6 +27,15 @@ from app.services.ai_client import AIChatResult, AIProviderError
 from app.tasks import ai_housekeeper as ai_tasks
 
 
+@pytest.fixture(autouse=True)
+def _bypass_ai_base_url_ssrf_check(monkeypatch):
+    """本文件用例统一用 api.example.com 示例域名（无法 DNS 解析），且不测 SSRF，
+    故放行 base_url 的私网/解析检查。SSRF 拦截由 test_ai_ssrf.py 专门覆盖。"""
+    monkeypatch.setattr(
+        "app.schemas.ai._reject_private_base_url_host", lambda host: None
+    )
+
+
 def auth_headers(user: User) -> dict[str, str]:
     return {"Authorization": f"Bearer {create_access_token({'user_id': str(user.id)})}"}
 
@@ -1128,12 +1137,19 @@ async def test_generate_ai_comment_uses_image_input_when_vision_model_configured
 
     provider = active_provider()
     provider.vision_model = "vision-test"
+    # 真实发帖的本地媒体一定对应一条 MediaFile；补建以通过读图归属校验
+    media = MediaFile(
+        uploader_id=test_user.id,
+        file_type="image",
+        original_name="sunny.png",
+        file_path="/media/sunny.png",
+    )
     post = Post(
         author_id=test_user.id,
         content="今天在院子里晒太阳",
         media_urls=[{"type": "image", "url": "/media/sunny.png"}],
     )
-    db.add_all([provider, post])
+    db.add_all([provider, media, post])
     await db.commit()
     await db.refresh(post)
     await ai_housekeeper.ensure_default_personas(db)

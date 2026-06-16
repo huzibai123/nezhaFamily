@@ -4,7 +4,7 @@
 
 from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Awaitable, Callable, Literal, Optional, TypeVar
 from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
 import asyncio
@@ -12,6 +12,7 @@ import json
 import secrets
 import shutil
 import tarfile
+import time
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
@@ -383,7 +384,27 @@ async def is_database_available(db: AsyncSession) -> bool:
     return True
 
 
-async def is_redis_available() -> bool:
+# 只读运行时探活/备份校验开销大且阻塞，做约 30 秒进程内缓存。
+# 仅缓存与请求无关的只读结果，绝不缓存随请求变化的业务数据。
+_RUNTIME_PROBE_CACHE_TTL_SECONDS = 30.0
+_RUNTIME_PROBE_CACHE: dict[str, dict] = {}
+_ProbeT = TypeVar("_ProbeT")
+
+
+async def cached_runtime_probe(
+    key: str, compute: Callable[[], Awaitable[_ProbeT]]
+) -> _ProbeT:
+    """按 key 缓存只读探活/校验结果，过期或缺失时调用 compute 重新计算。"""
+    now = time.monotonic()
+    cached = _RUNTIME_PROBE_CACHE.get(key)
+    if cached is not None and now - cached["ts"] < _RUNTIME_PROBE_CACHE_TTL_SECONDS:
+        return cached["value"]
+    value = await compute()
+    _RUNTIME_PROBE_CACHE[key] = {"value": value, "ts": now}
+    return value
+
+
+async def _probe_redis_available() -> bool:
     """用短超时 Redis ping 做运行时探活。"""
     redis_client = Redis.from_url(
         settings.REDIS_URL,
@@ -405,7 +426,12 @@ async def is_redis_available() -> bool:
                 await result
 
 
-async def get_celery_ping_status() -> tuple[bool, Optional[str]]:
+async def is_redis_available() -> bool:
+    """带缓存的 Redis 探活，减少每次概览请求的连接开销。"""
+    return await cached_runtime_probe("redis_available", _probe_redis_available)
+
+
+async def _probe_celery_ping_status() -> tuple[bool, Optional[str]]:
     """短超时探测 Celery worker，失败只作为诊断字段返回。"""
     from app.tasks import celery_app
 
@@ -422,18 +448,38 @@ async def get_celery_ping_status() -> tuple[bool, Optional[str]]:
     return False, "未收到 Celery worker ping 响应"
 
 
-def summarize_latest_backup_verification() -> tuple[Optional[str], Optional[datetime], Optional[str]]:
-    """返回最近备份校验摘要；无备份或校验异常均不影响管理概览。"""
-    latest = get_backup_status().latest
-    if not latest:
-        return None, None, None
+async def get_celery_ping_status() -> tuple[bool, Optional[str]]:
+    """带缓存的 Celery worker 探活，避免每次概览都阻塞等待 ping。"""
+    return await cached_runtime_probe("celery_ping", _probe_celery_ping_status)
+
+
+async def _probe_backup_verification(
+    backup_id: str,
+) -> tuple[Optional[str], Optional[datetime], Optional[str]]:
+    """校验指定备份并返回摘要；校验异常均不影响管理概览。"""
     try:
-        verification = verify_backup_snapshot(latest.backup_id)
+        # verify_backup_snapshot 会同步打开 tar 校验，放进线程池避免阻塞事件循环。
+        verification = await asyncio.to_thread(verify_backup_snapshot, backup_id)
     except HTTPException as exc:
         return "invalid", datetime.now(timezone.utc), str(exc.detail)
     except Exception as exc:
         return "invalid", datetime.now(timezone.utc), str(exc)[:300]
     return verification.status, verification.verified_at, verification.message
+
+
+async def summarize_latest_backup_verification() -> (
+    tuple[Optional[str], Optional[datetime], Optional[str]]
+):
+    """带缓存的最近备份校验摘要，避免重复打开 tar 阻塞概览请求。"""
+    # 取最近备份只读 manifest 目录，开销小；按 backup_id 组键，
+    # 新建备份后会自然切换缓存键，绝不返回上一个备份的陈旧校验结论。
+    latest = get_backup_status().latest
+    if not latest:
+        return None, None, None
+    return await cached_runtime_probe(
+        f"backup_verification:{latest.backup_id}",
+        lambda: _probe_backup_verification(latest.backup_id),
+    )
 
 
 async def get_runtime_status(db: AsyncSession) -> AdminRuntimeStatus:
@@ -453,7 +499,9 @@ async def get_runtime_status(db: AsyncSession) -> AdminRuntimeStatus:
     broker_url = settings.CELERY_BROKER_URL
     result_backend = settings.CELERY_RESULT_BACKEND
     celery_ping_available, celery_ping_error = await get_celery_ping_status()
-    backup_status, backup_verified_at, backup_message = summarize_latest_backup_verification()
+    backup_status, backup_verified_at, backup_message = (
+        await summarize_latest_backup_verification()
+    )
     provider_result = await db.execute(
         select(AIProviderConfig).order_by(desc(AIProviderConfig.created_at)).limit(1)
     )
@@ -499,24 +547,28 @@ def serialize_value(value):
     return value
 
 
-def serialize_model(instance) -> dict:
-    """序列化 SQLAlchemy 模型列。"""
+def serialize_model(instance, exclude: Optional[set[str]] = None) -> dict:
+    """序列化 SQLAlchemy 模型列，可按列名排除敏感字段。"""
+    excluded = exclude or set()
     return {
         column.name: serialize_value(getattr(instance, column.name))
         for column in instance.__table__.columns
+        if column.name not in excluded
     }
 
 
-async def snapshot_table(db: AsyncSession, model: type) -> list[dict]:
-    """导出一张表的全部记录。"""
+async def snapshot_table(
+    db: AsyncSession, model: type, exclude: Optional[set[str]] = None
+) -> list[dict]:
+    """导出一张表的全部记录，可按列名排除敏感字段。"""
     result = await db.execute(select(model))
-    return [serialize_model(item) for item in result.scalars().all()]
+    return [serialize_model(item, exclude=exclude) for item in result.scalars().all()]
 
 
 async def build_backup_payload(db: AsyncSession) -> dict:
     """构建家庭数据 JSON 快照。"""
     tables = {
-        "users": await snapshot_table(db, User),
+        "users": await snapshot_table(db, User, exclude={"password_hash"}),
         "posts": await snapshot_table(db, Post),
         "comments": await snapshot_table(db, Comment),
         "post_likes": await snapshot_table(db, PostLike),
@@ -560,20 +612,26 @@ async def create_backup_snapshot(db: AsyncSession) -> AdminBackupItem:
     created_at = datetime.now(timezone.utc)
     backup_id = created_at.strftime("%Y%m%d%H%M%S%f")
     backup_dir = BACKUP_ROOT / backup_id
-    backup_dir.mkdir(parents=True, exist_ok=False)
+    await asyncio.to_thread(backup_dir.mkdir, parents=True, exist_ok=False)
 
     snapshot_path = backup_dir / f"{backup_id}-database.json"
     payload = await build_backup_payload(db)
-    snapshot_path.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
 
-    media_archive_path, media_count, media_archive_size = create_media_archive(
+    def _write_snapshot() -> int:
+        """序列化并落盘数据库快照，返回文件大小。"""
+        snapshot_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        return snapshot_path.stat().st_size
+
+    snapshot_size = await asyncio.to_thread(_write_snapshot)
+
+    media_archive_path, media_count, media_archive_size = await asyncio.to_thread(
+        create_media_archive,
         backup_dir,
         backup_id,
     )
-    snapshot_size = snapshot_path.stat().st_size
     total_size = snapshot_size + media_archive_size
 
     backup = AdminBackupItem(
@@ -590,7 +648,8 @@ async def create_backup_snapshot(db: AsyncSession) -> AdminBackupItem:
         message="已生成数据库 JSON 快照和媒体归档",
     )
     manifest_path = backup_dir / "manifest.json"
-    manifest_path.write_text(
+    await asyncio.to_thread(
+        manifest_path.write_text,
         backup.model_dump_json(indent=2),
         encoding="utf-8",
     )

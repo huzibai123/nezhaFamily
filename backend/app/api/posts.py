@@ -47,6 +47,11 @@ def _normalize_pagination(page: int, page_size: int) -> tuple[int, int]:
     return page, page_size
 
 
+def _escape_like(value: str) -> str:
+    """转义 LIKE/ILIKE 中的特殊字符，避免用户关键词中的 % _ \\ 被当作通配符。"""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 def _post_filters(
     *,
     q: Optional[str],
@@ -58,11 +63,11 @@ def _post_filters(
     filters = []
     keyword = q.strip() if q else ""
     if keyword:
-        like_keyword = f"%{keyword}%"
+        like_keyword = f"%{_escape_like(keyword)}%"
         filters.append(
             or_(
-                Post.content.ilike(like_keyword),
-                User.username.ilike(like_keyword),
+                Post.content.ilike(like_keyword, escape="\\"),
+                User.username.ilike(like_keyword, escape="\\"),
             )
         )
     if author_id:

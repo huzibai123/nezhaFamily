@@ -2,6 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+/**
+ * 默认主题 CSS 变量
+ * 这些变量可以被主题系统动态覆盖（通过 useTheme composable）
+ * 提供回退值，确保在主题未加载时页面仍可正常显示
+ */
 :root {
   --surface: #f6f1e8;
   --surface-panel: rgba(255, 255, 252, 0.74);
@@ -26,6 +31,25 @@
   --shadow-hover: 0 22px 54px rgba(47, 39, 35, 0.12);
   --radius: 10px;
   --section: 96px;
+
+  /* 主题切换动画 - 平滑过渡所有主题相关属性 */
+  transition:
+    background-color 0.3s ease,
+    color 0.3s ease;
+}
+
+/* 为所有元素添加主题切换过渡动画 */
+* {
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease,
+    color 0.3s ease,
+    box-shadow 0.3s ease;
+}
+
+html.theme-changing,
+html.theme-changing * {
+  transition: none !important;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -40,9 +64,7 @@ html {
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display',
     'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
-  background:
-    linear-gradient(64deg, rgba(201, 67, 47, 0.08) 0 7%, transparent 7% 55%, rgba(45, 108, 104, 0.09) 55% 63%, transparent 63%),
-    linear-gradient(135deg, #fbf7ef 0%, #f0e7da 52%, #d9d4c8 100%);
+  background: var(--surface);
   color: var(--text);
   line-height: 1.6;
   font-size: 15px;
@@ -53,11 +75,11 @@ body {
 body::before {
   animation: family-ambient 18s ease-in-out infinite alternate;
   background:
-    linear-gradient(115deg, transparent 0%, rgba(255, 255, 255, 0.28) 35%, transparent 68%),
+    linear-gradient(115deg, transparent 0%, var(--accent-soft) 35%, transparent 68%),
     repeating-linear-gradient(
       90deg,
-      rgba(49, 38, 33, 0.032) 0,
-      rgba(49, 38, 33, 0.032) 1px,
+      var(--border) 0,
+      var(--border) 1px,
       transparent 1px,
       transparent 7rem
     );
@@ -66,6 +88,7 @@ body::before {
   pointer-events: none;
   position: fixed;
   z-index: -1;
+  opacity: 0.24;
 }
 
 #app { min-height: 100dvh; }
@@ -197,8 +220,21 @@ video {
   to { opacity: 1; transform: translate3d(0, -1.25rem, 0); }
 }
 
+/* 响应式优化 - 移动端适配 */
+@media (max-width: 768px) {
+  :root {
+    --section: 48px;
+    --radius: 8px;
+  }
+
+  body {
+    font-size: 14px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   body::before,
   .enter { animation: none; opacity: 1; transform: none; }
+  :root,
   * { transition-duration: 0ms !important; animation-duration: 0ms !important; }
 }

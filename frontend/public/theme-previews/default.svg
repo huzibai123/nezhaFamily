@@ -1,0 +1,27 @@
+<svg width="200" height="150" viewBox="0 0 200 150" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 背景 -->
+  <rect width="200" height="150" fill="#f6f1e8"/>
+
+  <!-- 顶部导航栏 -->
+  <rect y="0" width="200" height="24" fill="rgba(255, 255, 252, 0.88)" stroke="rgba(49, 38, 33, 0.14)" stroke-width="0.5"/>
+
+  <!-- 左侧边栏 -->
+  <rect x="8" y="32" width="50" height="110" fill="rgba(255, 255, 252, 0.74)" stroke="rgba(49, 38, 33, 0.14)" stroke-width="0.5" rx="4"/>
+
+  <!-- 主内容区 - 卡片布局 -->
+  <rect x="66" y="32" width="96" height="36" fill="rgba(255, 255, 252, 0.88)" stroke="rgba(49, 38, 33, 0.14)" stroke-width="0.5" rx="4"/>
+  <rect x="66" y="74" width="96" height="36" fill="rgba(255, 255, 252, 0.88)" stroke="rgba(49, 38, 33, 0.14)" stroke-width="0.5" rx="4"/>
+
+  <!-- 强调色点缀 -->
+  <circle cx="74" cy="44" r="4" fill="#c9432f"/>
+  <circle cx="74" cy="86" r="4" fill="#2d6c68"/>
+
+  <!-- 文本线条模拟 -->
+  <rect x="82" y="42" width="60" height="2" fill="rgba(47, 39, 35, 0.74)" rx="1"/>
+  <rect x="82" y="48" width="40" height="2" fill="rgba(47, 39, 35, 0.52)" rx="1"/>
+  <rect x="82" y="84" width="60" height="2" fill="rgba(47, 39, 35, 0.74)" rx="1"/>
+  <rect x="82" y="90" width="40" height="2" fill="rgba(47, 39, 35, 0.52)" rx="1"/>
+
+  <!-- 标签：温暖家庭 -->
+  <text x="100" y="132" fill="#c9432f" font-family="-apple-system, sans-serif" font-size="10" text-anchor="middle">温暖家庭</text>
+</svg>

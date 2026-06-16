@@ -14,6 +14,7 @@ export interface AuthUser {
   bio?: string | null
   birthday?: string | null
   role_in_family?: string | null
+  preferred_theme?: string
   created_at: string
   updated_at?: string
 }

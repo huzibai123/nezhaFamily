@@ -1,12 +1,19 @@
 """
 AI 家庭管家相关 Schema
 """
+import ipaddress
+import socket
 from datetime import datetime
 from typing import Any, Literal, Optional
 from uuid import UUID
 from urllib.parse import urlparse, urlunparse
 
 from pydantic import BaseModel, Field, field_validator
+
+
+# 是否允许 AI Base URL 指向内网/环回地址。默认 False（防 SSRF）。
+# 如需对接自建内网模型，可在部署时将本常量改为 True 放开私网拦截。
+ALLOW_PRIVATE_AI_BASE_URL = False
 
 
 AIProviderStatus = Literal[
@@ -25,6 +32,38 @@ AIPersonaCommentLength = Literal["short", "medium"]
 AIPersonaInteractionFrequency = Literal["low", "normal", "high"]
 
 
+def _reject_private_base_url_host(host: Optional[str]) -> None:
+    """拦截指向内网/环回/元数据地址的 Base URL，防止 SSRF。
+
+    将 host 解析为 IP（可能多条），只要任一命中私网/环回/链路本地/
+    保留/多播/未指定地址即拒绝；DNS 解析失败也保守拒绝。
+    若 ALLOW_PRIVATE_AI_BASE_URL 为 True 则跳过该检查（自建内网模型）。
+    """
+    if ALLOW_PRIVATE_AI_BASE_URL:
+        return
+    if not host:
+        raise ValueError("Base URL 缺少有效主机名")
+    try:
+        addr_infos = socket.getaddrinfo(host, None)
+    except socket.gaierror as exc:
+        raise ValueError("Base URL 主机名无法解析") from exc
+    for info in addr_infos:
+        ip_text = info[4][0]
+        try:
+            ip = ipaddress.ip_address(ip_text)
+        except ValueError:
+            continue
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            raise ValueError("Base URL 不允许指向内网/环回/元数据地址")
+
+
 class AIProviderBase(BaseModel):
     name: str = Field(default="默认模型", min_length=1, max_length=100)
     base_url: str = Field(default="https://api.openai.com/v1", min_length=1, max_length=500)
@@ -40,6 +79,7 @@ class AIProviderBase(BaseModel):
         parsed = urlparse(cleaned)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
             raise ValueError("Base URL 必须是有效的 http/https 地址")
+        _reject_private_base_url_host(parsed.hostname)
         path = parsed.path.rstrip("/")
         for suffix in ("/chat/completions", "/responses"):
             if path.endswith(suffix):

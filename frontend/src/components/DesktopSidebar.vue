@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Bell, Bot, CalendarDays, Home, Image, Images, Plus, Settings, UserCircle } from 'lucide-vue-next'
+import { Bell, Bot, CalendarDays, Home, Image, Images, Palette, Plus, Settings, UserCircle } from 'lucide-vue-next'
 import { useAuth } from '@/composables/useAuth'
 import FamilySeal from '@/components/FamilySeal.vue'
+import { useThemeSwitcher } from '@/composables/useThemeSwitcher'
 
 withDefaults(
   defineProps<{
@@ -16,6 +17,7 @@ withDefaults(
 )
 
 const { user } = useAuth()
+const { openThemeSwitcher } = useThemeSwitcher()
 
 const navItems = computed(() => [
   { label: '时间线', to: '/', icon: Home },
@@ -72,48 +74,56 @@ const roleLabel = computed(() => {
       </RouterLink>
     </nav>
 
-    <div class="profile-card mt-auto rounded-lg border border-[var(--border)] bg-[var(--surface-elevated)] p-3">
-      <RouterLink
-        v-if="user"
-        :to="`/profile/${user.id}`"
-        class="flex items-center gap-3 transition-opacity hover:opacity-90"
+    <div class="mt-auto space-y-3">
+      <button
+        @click="openThemeSwitcher"
+        class="theme-button flex h-11 w-full items-center justify-center gap-2.5 rounded-lg border border-[var(--border)] bg-[var(--surface-elevated)] px-3 text-sm font-medium text-[var(--text-secondary)] transition-colors hover:border-[var(--accent)] hover:bg-[var(--accent-soft)] hover:text-[var(--accent)]"
       >
-        <img
-          v-if="user.avatar_url"
-          :src="user.avatar_url"
-          :alt="user.username"
-          class="h-10 w-10 rounded-lg object-cover"
-        />
-        <div
-          v-else
-          class="grid h-10 w-10 place-items-center rounded-lg bg-[var(--accent-soft)] text-sm font-semibold text-[var(--accent)]"
-          aria-hidden="true"
-        >
-          {{ userInitial }}
-        </div>
-        <div class="min-w-0">
-          <p class="truncate text-sm font-medium text-[var(--text)]">{{ user.username }}</p>
-          <p class="text-xs text-[var(--text-muted)]">{{ roleLabel }}</p>
-        </div>
-      </RouterLink>
+        <Palette :size="17" stroke-width="2" aria-hidden="true" />
+        <span>切换主题</span>
+      </button>
 
-      <RouterLink v-else to="/login" class="flex items-center gap-3 text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text)]">
-        <div class="grid h-10 w-10 place-items-center rounded-lg bg-[var(--accent-soft)] text-[var(--accent)]">
-          <UserCircle :size="19" stroke-width="1.9" aria-hidden="true" />
-        </div>
-        <span>登录家庭空间</span>
-      </RouterLink>
+      <div class="profile-card rounded-lg border border-[var(--border)] bg-[var(--surface-elevated)] p-3">
+        <RouterLink
+          v-if="user"
+          :to="`/profile/${user.id}`"
+          class="flex items-center gap-3 transition-opacity hover:opacity-90"
+        >
+          <img
+            v-if="user.avatar_url"
+            :src="user.avatar_url"
+            :alt="user.username"
+            class="h-10 w-10 rounded-lg object-cover"
+          />
+          <div
+            v-else
+            class="grid h-10 w-10 place-items-center rounded-lg bg-[var(--accent-soft)] text-sm font-semibold text-[var(--accent)]"
+            aria-hidden="true"
+          >
+            {{ userInitial }}
+          </div>
+          <div class="min-w-0">
+            <p class="truncate text-sm font-medium text-[var(--text)]">{{ user.username }}</p>
+            <p class="text-xs text-[var(--text-muted)]">{{ roleLabel }}</p>
+          </div>
+        </RouterLink>
+
+        <RouterLink v-else to="/login" class="flex items-center gap-3 text-sm font-medium text-[var(--text-secondary)] hover:text-[var(--text)]">
+          <div class="grid h-10 w-10 place-items-center rounded-lg bg-[var(--accent-soft)] text-[var(--accent)]">
+            <UserCircle :size="19" stroke-width="1.9" aria-hidden="true" />
+          </div>
+          <span>登录家庭空间</span>
+        </RouterLink>
+      </div>
     </div>
   </aside>
 </template>
 
 <style scoped>
 .desktop-sidebar {
-  background:
-    linear-gradient(180deg, rgba(255, 255, 252, 0.9), rgba(246, 241, 232, 0.78)),
-    var(--surface-panel);
+  background: var(--surface-panel);
   backdrop-filter: blur(18px);
-  box-shadow: inset -1px 0 rgba(49, 38, 33, 0.06), 10px 0 34px rgba(47, 39, 35, 0.07);
+  box-shadow: inset -1px 0 var(--border), 10px 0 34px rgba(0, 0, 0, 0.08);
 }
 
 .brand-mark {
@@ -132,6 +142,7 @@ const roleLabel = computed(() => {
 
 .publish-button,
 .sidebar-link,
+.theme-button,
 .profile-card {
   transition:
     background-color 180ms ease,
@@ -183,6 +194,10 @@ const roleLabel = computed(() => {
   transform: scaleY(1);
 }
 
+.theme-button:hover {
+  transform: translateX(2px);
+}
+
 .profile-card:hover {
   border-color: rgba(201, 67, 47, 0.16);
   box-shadow: 0 10px 28px rgba(47, 39, 35, 0.1);
@@ -192,6 +207,7 @@ const roleLabel = computed(() => {
   .brand-mark,
   .publish-button,
   .sidebar-link,
+  .theme-button,
   .profile-card,
   .sidebar-link::before {
     transition: none;
@@ -199,7 +215,8 @@ const roleLabel = computed(() => {
 
   .desktop-sidebar:hover .brand-mark,
   .publish-button:hover,
-  .sidebar-link:hover {
+  .sidebar-link:hover,
+  .theme-button:hover {
     transform: none;
   }
 }

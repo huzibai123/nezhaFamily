@@ -19,7 +19,7 @@ from sqlalchemy import String, desc, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.media_utils import media_path_from_url, media_storage_path
+from app.core.media_utils import media_path_from_url, media_storage_path, raw_media_url
 from app.core.security import get_password_hash
 from app.models.ai import (
     AIAlbumSuggestion,
@@ -811,8 +811,19 @@ async def build_post_context(
     include_image_data: bool = True,
 ) -> AICommentContext:
     media_items = post.media_urls or []
+    # 只对“对应一条未软删 MediaFile”的本地媒体读盘喂给外部模型（P3-3 防数据外泄）；
+    # 不影响纯元信息（文件名/类型）进入文本上下文。
+    valid_image_paths = (
+        await load_readable_media_paths(db, media_items) if include_image_data else set()
+    )
     media_context = [
-        item for item in build_comment_media_context(media_items, include_image_data=include_image_data) if item
+        item
+        for item in build_comment_media_context(
+            media_items,
+            include_image_data=include_image_data,
+            valid_image_paths=valid_image_paths,
+        )
+        if item
     ]
     recent_profiles = await db.execute(select(AIProfile).order_by(desc(AIProfile.updated_at)).limit(5))
     profile_text = "\n".join(
@@ -827,10 +838,39 @@ async def build_post_context(
     )
 
 
+async def load_readable_media_paths(
+    db: AsyncSession,
+    media_items: list[object],
+) -> set[str]:
+    """返回这些媒体里“可安全读盘”的本地路径集合（对应一条未软删 MediaFile）。
+
+    用于在把图片字节喂给外部模型前做归属/有效性校验，避免读取无效或
+    已软删媒体外泄；非本地（外链）URL 无法校验，不纳入可读集合。
+    """
+    candidate_paths: set[str] = set()
+    for item in media_items:
+        if not isinstance(item, dict):
+            continue
+        raw_path = raw_media_url(str(item.get("url") or ""))
+        if raw_path:
+            candidate_paths.add(raw_path)
+    if not candidate_paths:
+        return set()
+
+    result = await db.execute(
+        select(MediaFile.file_path).where(
+            MediaFile.file_path.in_(candidate_paths),
+            MediaFile.deleted_at.is_(None),
+        )
+    )
+    return set(result.scalars().all())
+
+
 def build_comment_media_context(
     media_items: list[object],
     *,
     include_image_data: bool = True,
+    valid_image_paths: Optional[set[str]] = None,
 ) -> list[AICommentMediaContext]:
     contexts: list[AICommentMediaContext] = []
     image_data_count = 0
@@ -842,7 +882,15 @@ def build_comment_media_context(
         filename = Path(media_path_from_url(url)).name if url else ""
         content_type = guess_media_content_type(url, media_type)
         data_url: Optional[str] = None
-        if include_image_data and media_type == "image" and image_data_count < AI_COMMENT_MAX_IMAGES:
+        # 仅当该图片通过 DB 归属/有效性校验（在可读集合内）时才读盘喂给模型；
+        # valid_image_paths 为 None 表示调用方未提供校验集合，保持原有行为。
+        allowed_to_read = valid_image_paths is None or raw_media_url(url) in valid_image_paths
+        if (
+            include_image_data
+            and media_type == "image"
+            and allowed_to_read
+            and image_data_count < AI_COMMENT_MAX_IMAGES
+        ):
             data_url = load_comment_image_data_url(url, content_type)
             if data_url:
                 image_data_count += 1

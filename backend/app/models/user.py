@@ -2,7 +2,7 @@
 用户模型
 包含用户认证、角色管理和邀请码机制
 """
-from sqlalchemy import Boolean, Column, String, DateTime, Date, ForeignKey
+from sqlalchemy import Boolean, Column, String, DateTime, Date, ForeignKey, Integer
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
@@ -31,6 +31,8 @@ class User(Base):
     # 邀请码机制
     invite_code = Column(String(32), unique=True, nullable=True)  # 用户自己的邀请码
     invited_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)  # 被谁邀请
+    invite_code_uses = Column(Integer, nullable=False, default=0, server_default="0")  # 邀请码已使用次数
+    invite_code_expires_at = Column(DateTime(timezone=True), nullable=True)  # 邀请码过期时间（NULL 表示永久）
 
     # 头像
     avatar_url = Column(String(500), nullable=True)
@@ -39,6 +41,7 @@ class User(Base):
     bio = Column(String(500), nullable=True)  # 个人简介
     birthday = Column(Date, nullable=True)  # 生日
     role_in_family = Column(String(50), nullable=True)  # 家庭角色（如：爸爸、妈妈、宝宝等）
+    preferred_theme = Column(String(40), nullable=False, default="default", server_default="default")  # 个人主题偏好
 
     # 时间戳
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)

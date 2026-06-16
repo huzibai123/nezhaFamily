@@ -18,6 +18,7 @@ const cursorStyle = computed(() => ({
 
 let pointerQuery: MediaQueryList | null = null
 let motionQuery: MediaQueryList | null = null
+let desktopQuery: MediaQueryList | null = null
 let frameId = 0
 let targetX = 0
 let targetY = 0
@@ -67,7 +68,8 @@ const hideCursor = () => {
 const syncAvailability = () => {
   const canUsePointer = pointerQuery?.matches ?? false
   const allowsMotion = !(motionQuery?.matches ?? true)
-  isEnabled.value = canUsePointer && allowsMotion
+  const hasDesktopViewport = desktopQuery?.matches ?? false
+  isEnabled.value = canUsePointer && allowsMotion && hasDesktopViewport
 
   if (!isEnabled.value) {
     hideCursor()
@@ -81,11 +83,13 @@ const syncAvailability = () => {
 onMounted(() => {
   pointerQuery = window.matchMedia('(hover: hover) and (pointer: fine)')
   motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+  desktopQuery = window.matchMedia('(min-width: 1024px)')
 
   syncAvailability()
 
   pointerQuery.addEventListener('change', syncAvailability)
   motionQuery.addEventListener('change', syncAvailability)
+  desktopQuery.addEventListener('change', syncAvailability)
   window.addEventListener('pointermove', queuePosition, { passive: true })
   window.addEventListener('pointerleave', hideCursor)
   window.addEventListener('blur', hideCursor)
@@ -94,6 +98,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   pointerQuery?.removeEventListener('change', syncAvailability)
   motionQuery?.removeEventListener('change', syncAvailability)
+  desktopQuery?.removeEventListener('change', syncAvailability)
   window.removeEventListener('pointermove', queuePosition)
   window.removeEventListener('pointerleave', hideCursor)
   window.removeEventListener('blur', hideCursor)
@@ -294,7 +299,7 @@ onBeforeUnmount(() => {
   }
 }
 
-@media (hover: none), (pointer: coarse), (prefers-reduced-motion: reduce) {
+@media (max-width: 1023px), (hover: none), (pointer: coarse), (prefers-reduced-motion: reduce) {
   .nezha-cursor {
     display: none;
   }
